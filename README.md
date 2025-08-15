@@ -1,6 +1,8 @@
 # Crive Monorepo (INIT)
+
 - Package manager: pnpm
-- Workspaces: apps/*, packages/*
+- Workspaces: apps/_, packages/_
 - Base TS config: tsconfig.base.json
-- Alias: @shared/* -> packages/shared/src/*
+- Alias: @shared/_ -> packages/shared/src/_
 - Scripts: dev | build | lint | clean | typecheck
+# touch
