@@ -1,0 +1,15 @@
+{
+  "name": "@crive/api",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch ./src/index.mjs",
+    "build": "echo \"(api build placeholder)\"",
+    "lint": "echo \"(placeholder lint)\"",
+    "clean": "rm -rf dist",
+    "typecheck": "echo \"(no types yet)\""
+  },
+  "dependencies": {
+    "@crive/shared": "workspace:*"
+  }
+}

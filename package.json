@@ -1,0 +1,16 @@
+{
+  "name": "crive-monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint || true",
+    "clean": "pnpm -r run clean || true && rm -rf node_modules pnpm-lock.yaml",
+    "typecheck": "pnpm -r run typecheck || true"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
+  }
+}

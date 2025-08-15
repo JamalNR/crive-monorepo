@@ -1,0 +1,15 @@
+{
+  "name": "@crive/admin",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "echo \"(admin dev placeholder)\"",
+    "build": "echo \"(admin build placeholder)\"",
+    "lint": "echo \"(placeholder lint)\"",
+    "clean": "rm -rf dist",
+    "typecheck": "echo \"(no types yet)\""
+  },
+  "dependencies": {
+    "@crive/shared": "workspace:*"
+  }
+}
