@@ -3,19 +3,27 @@ on:
   pull_request:
   push:
     branches: [main]
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # 1) Install pnpm lebih dulu
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      # 2) Baru setup Node + cache pnpm
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'pnpm'
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
-      - run: pnpm install --frozen-lockfile
+
+      # 3) Jalankan pipeline
+      - run: pnpm --version
+      - run: pnpm install           # (tanpa --frozen-lockfile karena lockfile belum dikomit)
       - run: pnpm lint
       - run: pnpm -r run typecheck || true
       - run: pnpm -r run build || true
