@@ -1,34 +1,27 @@
-name: Build & Push API to GHCR
+name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ main ]
-    paths:
-      - 'apps/api/**'
-      - '.github/workflows/ghcr-api.yml'
-      - 'pnpm-lock.yaml'
-      - 'package.json'
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  packages: write
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/api
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Setup Buildx
+      - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR (GITHUB_TOKEN)
@@ -38,24 +31,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # PERBAIKAN UTAMA: format yang benar untuk metadata action
       - name: Extract metadata (tags, labels)
-        id: meta
+        id: meta                                    # WAJIB: step ID untuk referensi
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
+          tags: |                                   # BENAR: gunakan pipe operator
             type=ref,event=branch
             type=ref,event=pr
-            type=sha
+            type=sha,prefix={{branch}}-
             type=raw,value=rc
-    
+            type=raw,value=latest,enable={{is_default_branch}}
+          flavor: |                                 # Format multiline untuk flavor
+            latest=auto
+          labels: |                                 # Format multiline untuk labels
+            org.opencontainers.image.title=${{ github.repository }}
+            org.opencontainers.image.description=Docker image for ${{ github.repository }}
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.meta.outputs.tags }}     # Referensi output dengan benar
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -65,8 +66,6 @@ jobs:
         run: |
           set -e
           for i in {1..10}; do
-            docker pull ${{ env.REGISTRY }}/${{ github.repository }}/api:rc && break || { echo "rc not ready (attempt $i)"; sleep 5; }
-          done
-          for i in {1..10}; do
-            docker pull ${{ env.REGISTRY }}/${{ github.repository }}/api:sha-${GITHUB_SHA::7} && break || { echo "sha not ready (attempt $i)"; sleep 5; }
+            docker pull ${{ env.REGISTRY }}/${{ github.repository }}:latest && break
+            sleep 5
           done
