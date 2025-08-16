@@ -66,7 +66,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
+          
       - name: Verify images (pull)
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
