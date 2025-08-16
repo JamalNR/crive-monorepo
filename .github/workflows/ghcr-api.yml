@@ -75,11 +75,11 @@ jobs:
           set -e
           for i in {1..10}; do
           docker pull ghcr.io/${{ github.repository }}/api:rc && break || {
-          echo "rc not ready yet (attempt $i), retrying..."; sleep 5;
-          }
+              echo "rc not ready yet (attempt $i), retrying..."; sleep 5;
+            }
           done
           for i in {1..10}; do
-          docker pull ghcr.io/${{ github.repository }}/api:sha-${GITHUB_SHA::7} && break || {
-          echo "sha not ready yet (attempt $i), retrying..."; sleep 5;
-          }
+            docker pull ghcr.io/${{ github.repository }}/api:sha-${GITHUB_SHA::7} && break || {
+              echo "sha not ready yet (attempt $i), retrying..."; sleep 5;
+            }
           done
