@@ -55,7 +55,7 @@ jobs:
           file: ./apps/api/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          tags: ${{ steps.meta.outputs.tags }}     # Referensi output dengan benar
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -68,3 +68,4 @@ jobs:
             docker pull ${{ env.REGISTRY }}/${{ github.repository }}:latest && break
             sleep 5
           done
+
