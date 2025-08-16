@@ -8,7 +8,6 @@ on:
       - '.github/workflows/ghcr-api.yml'
       - '.dockerignore'
       - 'pnpm-workspace.yaml'
-      - 'pnpm-lock.yaml'
       - 'package.json'
   pull_request:
     branches: [ main ]
@@ -17,7 +16,6 @@ on:
       - '.github/workflows/ghcr-api.yml'
       - '.dockerignore'
       - 'pnpm-workspace.yaml'
-      - 'pnpm-lock.yaml'
       - 'package.json'
   workflow_dispatch:
 
@@ -61,7 +59,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .           # root context (monorepo)
+          context: .                  # root repo (monorepo)
           file: ./apps/api/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
