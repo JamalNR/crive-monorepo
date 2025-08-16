@@ -70,13 +70,13 @@ jobs:
           cache-to: type=gha,mode=max
           
       - name: Verify images (pull)
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        run: |
-          set -e
-          for i in {1..10}; do
-          docker pull ghcr.io/${{ github.repository }}/api:rc && break || { echo "rc not ready (attempt $i)"; sleep 5; }
-          done
-          for i in {1..10}; do
-            docker pull ghcr.io/${{ github.repository }}/api:sha-${GITHUB_SHA::7} && break || { echo "sha not ready (attempt $i)"; sleep 5; }
-          done
+  if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+  run: |
+    set -e
+    for i in {1..10}; do
+      docker pull ghcr.io/${{ github.repository }}/api:rc && break || { echo "rc not ready (attempt $i)"; sleep 5; }
+    done
+    for i in {1..10}; do
+      docker pull ghcr.io/${{ github.repository }}/api:sha-${GITHUB_SHA::7} && break || { echo "sha not ready (attempt $i)"; sleep 5; }
+    done
 
