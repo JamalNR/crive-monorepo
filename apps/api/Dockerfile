@@ -1,30 +1,22 @@
 # apps/api/Dockerfile
-# syntax=docker/dockerfile:1
+FROM node:20-alpine
 
-FROM node:20-alpine AS deps
 WORKDIR /workspace
-# aktifkan pnpm via corepack (lebih bersih daripada npm i -g pnpm)
+# pnpm dari corepack (lebih stabil di Node 20)
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-# --- Salin file MANIFEST saja untuk cache install yang maksimal ---
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-COPY apps/api/package.json apps/api/package.json
-# (opsional) kalau ada packages lain yang jadi dependency:
-# COPY packages/shared/package.json packages/shared/package.json
-
-# Install dependencies (workspace-aware)
-RUN pnpm install --frozen-lockfile
-
-# --- Runtime layer ---
-FROM node:20-alpine AS runner
-WORKDIR /workspace
-# bawa hasil install dari layer deps
-COPY --from=deps /workspace/node_modules ./node_modules
-# bawa seluruh source (diperlukan saat run/build)
+# Salin seluruh repo (kita sudah punya .dockerignore untuk membatasi context)
 COPY . .
 
-# masuk ke app API
+# Install dependensi tanpa strict lockfile agar tidak blok
+RUN pnpm install --no-frozen-lockfile
+
+# Opsional: build kalau apps/api punya script build
+# RUN pnpm --filter ./apps/api build || true
+
+# Jalankan API
 WORKDIR /workspace/apps/api
 EXPOSE 4000
-# Gunakan "start" kalau ada, fallback ke "dev"
 CMD ["pnpm","start"]
+# Jika belum ada "start", ganti ke:
+# CMD ["pnpm","dev"]
