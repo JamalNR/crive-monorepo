@@ -70,7 +70,6 @@ jobs:
           context: ./apps/api
           file: ./apps/api/Dockerfile
           push: true
-          provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
