@@ -31,21 +31,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # PERBAIKAN UTAMA: format yang benar untuk metadata action
       - name: Extract metadata (tags, labels)
-        id: meta                                    # WAJIB: step ID untuk referensi
+        id: meta                                    
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |                                   # BENAR: gunakan pipe operator
+          tags: |                                   
             type=ref,event=branch
             type=ref,event=pr
             type=sha,prefix={{branch}}-
             type=raw,value=rc
             type=raw,value=latest,enable={{is_default_branch}}
-          flavor: |                                 # Format multiline untuk flavor
+          flavor: |                                 
             latest=auto
-          labels: |                                 # Format multiline untuk labels
+          labels: |                                 
             org.opencontainers.image.title=${{ github.repository }}
             org.opencontainers.image.description=Docker image for ${{ github.repository }}
 
