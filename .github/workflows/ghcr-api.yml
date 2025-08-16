@@ -52,7 +52,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
+          tags:
             type=raw,value=rc
             type=sha,format=short,prefix=sha-
 
@@ -69,7 +69,7 @@ jobs:
 
       - name: Verify images (pull)
         if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
-        run: |
+        run:
           set -e
           for i in {1..10}; do
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rc && break || { echo "rc not ready (attempt $i)"; sleep 5; }
@@ -77,3 +77,4 @@ jobs:
           for i in {1..10}; do
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${GITHUB_SHA::7} && break || { echo "sha not ready (attempt $i)"; sleep 5; }
           done
+
