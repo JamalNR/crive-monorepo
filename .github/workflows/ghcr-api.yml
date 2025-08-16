@@ -68,6 +68,3 @@ jobs:
           for i in {1..10}; do
             docker pull ${{ env.REGISTRY }}/${{ github.repository }}/api:sha-${GITHUB_SHA::7} && break || { echo "sha not ready (attempt $i)"; sleep 5; }
           done
-
-
-
