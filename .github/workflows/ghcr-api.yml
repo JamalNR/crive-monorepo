@@ -66,3 +66,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          
+      - name: Verify images (pull)
+        run: |
+          docker pull ghcr.io/${{ github.repository }}/api:rc
+          docker pull ghcr.io/${{ github.repository }}/api:sha-${GITHUB_SHA::7}
