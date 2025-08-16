@@ -61,8 +61,16 @@ jobs:
         with:
           context: .                  # root repo (monorepo)
           file: ./apps/api/Dockerfile
-          push: true
+        
+        push: ${{ github.event_name == 'push' }}
+
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          
+      - name: Verify images (pull)
+        if: github.event_name == 'push'
+        run: |
+          docker pull ghcr.io/${{ github.repository }}/api:rc
+          docker pull ghcr.io/${{ github.repository }}/api:sha-${GITHUB_SHA::7}

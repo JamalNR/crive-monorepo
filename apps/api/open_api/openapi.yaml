@@ -1,0 +1,23 @@
+openapi: 3.0.3
+info:
+  title: Crive API
+  version: 0.1.0
+  description: Public endpoints untuk layanan Crive.
+servers:
+  - url: http://localhost:4000
+paths:
+  /health:
+    get:
+      summary: Health check
+      tags: [System]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
