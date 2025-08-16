@@ -56,26 +56,25 @@ jobs:
             type=raw,value=rc
             type=sha,format=short,prefix=sha-
 
-      - name: Build and push
+            - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .                  # root repo (monorepo)
+          context: .
           file: ./apps/api/Dockerfile
-        
-        push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          
+
       - name: Verify images (pull)
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
-        set -e
-        for i in {1..10}; do
-        docker pull ghcr.io/${{ github.repository }}/api:rc && break || { echo "rc not ready (attempt $i)"; sleep 5; }
-        done
-        for i in {1..10}; do
-        docker pull ghcr.io/${{ github.repository }}/api:sha-${GITHUB_SHA::7} && break || { echo "sha not ready (attempt $i)"; sleep 5; }
-        done
+          set -e
+          for i in {1..10}; do
+            docker pull ghcr.io/${{ github.repository }}/api:rc && break || { echo "rc not ready (attempt $i)"; sleep 5; }
+          done
+          for i in {1..10}; do
+            docker pull ghcr.io/${{ github.repository }}/api:sha-${GITHUB_SHA::7} && break || { echo "sha not ready (attempt $i)"; sleep 5; }
+          done
+
