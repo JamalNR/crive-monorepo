@@ -1,7 +1,10 @@
-name: Build & Push API to GHCR
-
 on:
   push:
+    branches: [ main ]
+    paths:
+      - 'apps/api/**'
+      - '.github/workflows/ghcr-api.yml'
+  pull_request:
     branches: [ main ]
     paths:
       - 'apps/api/**'
@@ -59,3 +62,4 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
