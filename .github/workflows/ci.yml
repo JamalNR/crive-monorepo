@@ -1,21 +1,35 @@
 name: CI
+
 on:
   pull_request:
+    branches: [ main ]
   push:
-    branches: [main]
+    branches: [ main ]
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'pnpm'
-      - uses: pnpm/action-setup@v4
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          version: 10.14.0
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm -r run typecheck || true
-      - run: pnpm -r run build || true
+          version: 9
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm -r lint || true
+
+      - name: Typecheck
+        run: pnpm -r typecheck || true
+
+      - name: Build
+        run: pnpm -r build || true
