@@ -73,9 +73,7 @@ jobs:
         run: |
           set -e
           short_sha="${GITHUB_SHA:0:7}"
-          for i in {1..10}; do
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rc && break || { echo "rc not ready (attempt $i)"; sleep 5; }
+          for i in {1..10}; do docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rc && break || { echo "rc not ready (attempt $i)"; sleep 5; }
           done
-          for i in {1..10}; do
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${short_sha} && break || { echo "sha not ready (attempt $i)"; sleep 5; }
+          for i in {1..10}; do docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${short_sha} && break || { echo "sha not ready (attempt $i)"; sleep 5; }
           done
