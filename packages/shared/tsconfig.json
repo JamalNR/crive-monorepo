@@ -1,11 +1,1 @@
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "outDir": "dist",
-    "declaration": true,
-    "declarationMap": true
-  },
-  "include": [
-    "src"
-  ]
-}
+{ "compilerOptions": { "outDir": "dist", "declaration": true, "module": "ES2022", "target": "ES2022", "moduleResolution": "Bundler", "strict": true, "skipLibCheck": true }, "include": ["src/**/*"] }
