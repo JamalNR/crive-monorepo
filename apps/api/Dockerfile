@@ -9,15 +9,17 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/api/package.json apps/api/
 
-# 2) Install workspace (butuh dev deps buat tsc)
-RUN pnpm -r install --no-frozen-lockfile
+# Tambahkan sebelum build command
+RUN pnpm install --frozen-lockfile --prefer-frozen-lockfile
+
+# Debug build
+RUN pnpm --filter @crive/shared build --reporter=verbose
 
 # 3) Bawa seluruh source
 COPY . .
 
 # 4) Pastikan @crive/shared punya node_modules + build setelah COPY
-RUN pnpm -r --filter @crive/shared install --no-frozen-lockfile \
- && pnpm -r --filter @crive/shared build
+RUN pnpm --filter @crive/shared build || (echo "Build failed, checking logs..." && exit 1)
 
 # 5) Jalankan API
 WORKDIR /workspace/apps/api
