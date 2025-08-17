@@ -1,22 +1,16 @@
-name: Build & Push API to GHCR
+name: Build & Push API image to GHCR
 
 on:
   push:
     branches: [ main ]
     paths:
-      - 'apps/api/**'
-      - '.github/workflows/ghcr-api.yml'
-      - '.dockerignore'
-      - 'pnpm-workspace.yaml'
-      - 'package.json'
+      - "apps/api/**"
+      - ".github/workflows/ghcr-api.yml"
   pull_request:
     branches: [ main ]
     paths:
-      - 'apps/api/**'
-      - '.github/workflows/ghcr-api.yml'
-      - '.dockerignore'
-      - 'pnpm-workspace.yaml'
-      - 'package.json'
+      - "apps/api/**"
+      - ".github/workflows/ghcr-api.yml"
   workflow_dispatch:
 
 permissions:
@@ -25,52 +19,67 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/api
+  IMAGE: ${{ github.repository }}/api
 
 jobs:
-  build-and-push:
+  docker:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Setup QEMU
-        uses: docker/setup-qemu-action@v3
+      # <- INI WAJIB ADA (uses:)
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          tags: |
+            type=raw,value=rc
+            type=sha,format=short,prefix=sha-
 
-      - name: Setup Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GHCR (GITHUB_TOKEN)
+      # Login hanya saat push (untuk publish ke GHCR)
+      - name: Login to GHCR
+        if: github.event_name == 'push'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=rc
-            type=sha,format=short,prefix=sha-
-
-      - name: Build and push
+      # Build di PR (tanpa push)
+      - name: Build (PR only)
+        if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
         with:
-          context: .                  # root repo (monorepo)
+          context: .
           file: ./apps/api/Dockerfile
-        
-        push: ${{ github.event_name == 'push' }}
-
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          
-      - name: Verify images (pull)
-        if: github.event_name == 'push'
+
+      # Build & Push saat push ke main
+      - name: Build & Push (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # Verifikasi image tersedia di GHCR (rc & sha-xxxxxxx)
+      - name: Verify images (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
         run: |
-          docker pull ghcr.io/${{ github.repository }}/api:rc
-          docker pull ghcr.io/${{ github.repository }}/api:sha-${GITHUB_SHA::7}
+          set -euo pipefail
+          IMG="${{ env.REGISTRY }}/${{ env.IMAGE }}"
+          SHORT="${GITHUB_SHA::7}"
+          for i in {1..12}; do
+            docker pull "${IMG}:rc" && break || { echo "rc not ready ($i)"; sleep 5; }
+          done
+          for i in {1..12}; do
+            docker pull "${IMG}:sha-${SHORT}" && break || { echo "sha not ready ($i)"; sleep 5; }
+          done
