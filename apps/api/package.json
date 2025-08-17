@@ -1,15 +1,14 @@
 {
-  "name": "@crive/api",
+  "name": "api",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
+  "dependencies": {
+    "express": "^4.19.2",
+    "@crive/shared": "workspace:*"
+  },
   "scripts": {
     "dev": "node --watch ./src/index.mjs",
-    "build": "echo \"(api build placeholder)\"",
-    "lint": "echo \"(placeholder lint)\"",
-    "clean": "rm -rf dist",
-    "typecheck": "echo \"(no types yet)\""
-  },
-  "dependencies": {
-    "@crive/shared": "workspace:*"
+    "start": "node ./src/index.mjs"
   }
 }
