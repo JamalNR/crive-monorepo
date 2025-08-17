@@ -16,40 +16,46 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: ghcr-api-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/api
 
 jobs:
-  build_and_push:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Buildx
+      - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login GHCR
-        if: ${{ github.event_name == 'push' }}
+      # Login hanya saat push ke main (PR tidak perlu)
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Meta
+      - name: Meta (tags & labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=rc
             type=sha,format=short,prefix=sha-
 
-      # Build untuk PR (tanpa push)
-      - name: Build (PR)
-        if: ${{ github.event_name == 'pull_request' }}
+      # Build saja untuk PR (tanpa push)
+      - name: Build (PR only)
+        if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -58,9 +64,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      # Build & Push saat push ke main
+      # Build + push saat push ke main
       - name: Build & Push (main)
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -68,18 +74,22 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      # Verifikasi image bisa dipull
-      - name: Verify images
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      # Verifikasi image bisa di-pull (rc dan sha-<7>)
+      - name: Verify images (pull back)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
+        env:
+          IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          SHORT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          IMG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          short="${SHORT_SHA::7}"
           for i in {1..12}; do
-            docker pull "$IMG:rc" && break || { echo "rc not ready ($i)"; sleep 5; }
+            docker pull "${IMG}:rc" && break || { echo "rc not ready ($i)"; sleep 5; }
           done
-          SHA="${GITHUB_SHA::7}"
           for i in {1..12}; do
-            docker pull "$IMG:sha-$SHA" && break || { echo "sha not ready ($i)"; sleep 5; }
+            docker pull "${IMG}:sha-${short}" && break || { echo "sha not ready ($i)"; sleep 5; }
           done
