@@ -69,7 +69,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      # Verifikasi image sudah bisa dipull
+      # Verifikasi image bisa dipull
       - name: Verify images
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         shell: bash
