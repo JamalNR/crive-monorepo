@@ -2,21 +2,18 @@
 FROM node:20-alpine
 
 WORKDIR /workspace
-# pnpm dari corepack (lebih stabil di Node 20)
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-# Salin seluruh repo (kita sudah punya .dockerignore untuk membatasi context)
+# salin seluruh monorepo
 COPY . .
 
-# Install dependensi tanpa strict lockfile agar tidak blok
+# install deps monorepo
 RUN pnpm install --no-frozen-lockfile
 
-# Opsional: build kalau apps/api punya script build
-# RUN pnpm --filter ./apps/api build || true
+# build lib yang dipakai API (wajib agar ada dist/)
+RUN pnpm --filter @crive/shared build
 
-# Jalankan API
+# jalankan API
 WORKDIR /workspace/apps/api
 EXPOSE 4000
-CMD ["pnpm","start"]
-# Jika belum ada "start", ganti ke:
-# CMD ["pnpm","dev"]
+CMD ["node", "./src/index.mjs"]
