@@ -8,7 +8,6 @@ on:
       - '.github/workflows/ghcr-api.yml'
       - '.dockerignore'
       - 'pnpm-workspace.yaml'
-      - 'pnpm-lock.yaml'
       - 'package.json'
   pull_request:
     branches: [ main ]
@@ -17,7 +16,6 @@ on:
       - '.github/workflows/ghcr-api.yml'
       - '.dockerignore'
       - 'pnpm-workspace.yaml'
-      - 'pnpm-lock.yaml'
       - 'package.json'
   workflow_dispatch:
 
@@ -42,7 +40,7 @@ jobs:
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GHCR
+      - name: Login to GHCR (GITHUB_TOKEN)
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -58,25 +56,30 @@ jobs:
             type=raw,value=rc
             type=sha,format=short,prefix=sha-
 
-      - name: Build and (conditionally) push
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: .                  # root repo (monorepo)
           file: ./apps/api/Dockerfile
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        
+        push: ${{ github.event_name == 'push' }}
+
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Verify images are available
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          short_sha="${GITHUB_SHA:0:7}"
-          for i in {1..10}; do
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rc && break || { echo "rc not ready (attempt $i)"; sleep 5; }
-          done
-          for i in {1..10}; do
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-$short_sha && break || { echo "sha not ready (attempt $i)"; sleep 5; }
+          
+      - name: Verify images (pull)
+  if: github.event_name == 'push'
+  run: |
+    set -e
+    for i in {1..10}; do
+      docker pull ghcr.io/${{ github.repository }}/api:rc && break || {
+        echo "rc not ready yet (attempt $i), retrying..."; sleep 5;
+      }
+    done
+    for i in {1..10}; do
+      docker pull ghcr.io/${{ github.repository }}/api:sha-${GITHUB_SHA::7} && break || {
+        echo "sha not ready yet (attempt $i), retrying..."; sleep 5;
+      }
+    done
