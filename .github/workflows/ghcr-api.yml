@@ -1,36 +1,24 @@
-name: Build & Push API image
-
-on:
-  push:
-    branches: [ main ]
-    paths:
-      - "apps/api/**"
-      - "packages/**"
-      - "pnpm-workspace.yaml"
-      - "pnpm-lock.yaml"
-      - "package.json"
-      - ".github/workflows/ghcr-api.yml"
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  packages: write
-
-# Selalu lowercase
-env:
-  IMAGE: ghcr.io/jamalnr/crive-monorepo/api
-
 jobs:
-  build:  # nama job "build" (aman bila ada branch protection)
+  docker:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - uses: actions/checkout@v4
 
-      # multi-arch (M4/ARM + x86)
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      # 💡 Paksa nama image lowercase untuk GHCR
+      - name: Set IMAGE (lowercase for GHCR)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}/api" >> $GITHUB_ENV
 
-      - name: Login GHCR
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -44,25 +32,14 @@ jobs:
           images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=rc
-            type=sha,format=short,prefix=sha-
+            type=sha,format=short
 
       - name: Build & Push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./apps/api/Dockerfile
-          push: true
           platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Verify pulled tags
-        shell: bash
-        run: |
-          set -euo pipefail
-          IMG="${{ env.IMAGE }}"
-          for i in {1..12}; do docker pull "$IMG:rc" && break || { echo "rc wait $i"; sleep 5; }; done
-          SHORT="${GITHUB_SHA::7}"
-          for i in {1..12}; do docker pull "$IMG:sha-$SHORT" && break || { echo "sha wait $i"; sleep 5; }; done
