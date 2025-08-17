@@ -80,4 +80,3 @@ jobs:
           done
           for i in {1..10}; do
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-$short_sha && break || { echo "sha not ready (attempt $i)"; sleep 5; }
-          done
