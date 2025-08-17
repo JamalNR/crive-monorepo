@@ -6,18 +6,11 @@ on:
     paths:
       - 'apps/api/**'
       - '.github/workflows/ghcr-api.yml'
-      - '.dockerignore'
-      - 'pnpm-workspace.yaml'
-      - 'package.json'
   pull_request:
     branches: [ main ]
     paths:
       - 'apps/api/**'
       - '.github/workflows/ghcr-api.yml'
-      - '.dockerignore'
-      - 'pnpm-workspace.yaml'
-      - 'package.json'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -40,7 +33,9 @@ jobs:
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GHCR (GITHUB_TOKEN)
+      # Login hanya saat push ke main (PR tidak butuh login/push)
+      - name: Login to GHCR
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -56,26 +51,54 @@ jobs:
             type=raw,value=rc
             type=sha,format=short,prefix=sha-
 
-      - name: Build and push
+      # Build saja untuk PR (tanpa push)
+      - name: Build (PR only)
+        if: ${{ github.event_name == 'pull_request' }}
         uses: docker/build-push-action@v6
         with:
-          context:                  
+          context: .
           file: ./apps/api/Dockerfile
-          push: ${{ github.event_name == 'push' }}
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          
-      - name: Verify images
+
+      # Build + Push saat push ke main
+      - name: Build and Push (main)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Verifikasi image sudah terbaca oleh GHCR (pull ulang)
+      - name: Verify images (main)
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         shell: bash
+        env:
+          IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
-          set -e
-          short_sha="${GITHUB_SHA:0:7}"
-          for i in {1..10}; do 
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rc && break || { echo "rc not ready (attempt $i)"; sleep 5; }
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+
+          for i in {1..12}; do
+            if docker pull "${IMG}:rc"; then
+              echo "rc OK"
+              break
+            fi
+            echo "rc not ready ($i)"; sleep 5
           done
-          for i in {1..10}; do
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${short_sha} && break || { echo "sha not ready (attempt $i)"; sleep 5; }
+
+          for i in {1..12}; do
+            if docker pull "${IMG}:sha-${SHORT_SHA}"; then
+              echo "sha-${SHORT_SHA} OK"
+              break
+            fi
+            echo "sha not ready ($i)"; sleep 5
           done
