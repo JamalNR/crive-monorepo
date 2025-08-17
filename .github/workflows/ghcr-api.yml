@@ -21,12 +21,13 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}/api
 
 jobs:
-  docker:
-    # >>> HANYA jalan di PR ke main ATAU push di main
+  build:
     if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
 
       # PR: cukup loloskan check (tanpa build/push)
       - name: PR check (no build/push)
@@ -61,7 +62,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # sengaja tanpA `platforms` dulu biar stabil (single-arch)
+          platforms: linux/amd64,linux/arm64
 
       - name: Verify images (main)
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
