@@ -1,14 +1,21 @@
 FROM node:20-alpine
-
 WORKDIR /workspace
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-# Bawa seluruh repo (node_modules diabaikan oleh .dockerignore)
+# Manifest untuk cache
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/api/package.json apps/api/
+
+# Install semua workspace
+RUN pnpm -r install --no-frozen-lockfile
+
+# Bawa seluruh source
 COPY . .
 
-# Install semua workspace + build semua (termasuk @crive/shared)
-RUN pnpm -r install --no-frozen-lockfile
-RUN pnpm -r build
+# Pastikan @crive/shared ter-install & build (tanpa pnpm -r build)
+RUN pnpm -r --filter @crive/shared install --no-frozen-lockfile \
+ && pnpm -r --filter @crive/shared run build
 
 # Jalankan API
 WORKDIR /workspace/apps/api

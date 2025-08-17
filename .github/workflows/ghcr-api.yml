@@ -1,17 +1,8 @@
-name: Build & Push API image
+name: Build & Push API image to GHCR
 
 on:
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'apps/api/**'
-      - '.github/workflows/ghcr-api.yml'
   push:
     branches: [ main ]
-    paths:
-      - 'apps/api/**'
-      - '.github/workflows/ghcr-api.yml'
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,55 +12,26 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}/api
 
 jobs:
-  build:
-    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+  docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
+
       - uses: docker/setup-buildx-action@v3
 
-      # PR: cukup loloskan check (tanpa build/push)
-      - name: PR check (no build/push)
-        if: ${{ github.event_name == 'pull_request' }}
-        run: echo "OK (PR mode) — skip build/push"
-
-      # Push ke main: login + metadata + build & push + verifikasi
       - name: Login GHCR
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE }}
-          tags: |
-            type=raw,value=rc
-            type=sha,format=short,prefix=sha-
-
-      - name: Build & Push (main)
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Build & Push (amd64 only)
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./apps/api/Dockerfile
+          file: apps/api/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
-
-      - name: Verify images (main)
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          IMG="${{ env.IMAGE }}"
-          SHORT_SHA="${GITHUB_SHA::7}"
-          for i in {1..12}; do docker pull "$IMG:rc" && break || { echo "rc wait $i"; sleep 5; }; done
-          for i in {1..12}; do docker pull "$IMG:sha-$SHORT_SHA" && break || { echo "sha wait $i"; sleep 5; }; done
+          tags: ${{ env.IMAGE }}:rc
+          # Sederhana dulu: 1 arsitektur supaya stabil
+          platforms: linux/amd64
