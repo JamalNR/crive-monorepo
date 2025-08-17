@@ -1,24 +1,24 @@
 # apps/api/Dockerfile
 FROM node:20-alpine
 
-# Pakai pnpm via corepack
+WORKDIR /workspace
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
-# Kerja di root monorepo
-WORKDIR /workspace
+# Salin manifest dulu (biar cache rapi)
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/api/package.json apps/api/
 
-# Salin seluruh repo (gunakan .dockerignore utk node_modules/dll)
+# Install semua deps workspace (termasuk dev) secara rekursif
+RUN pnpm -r install --no-frozen-lockfile
+
+# Baru salin seluruh repo
 COPY . .
 
-# Install deps di root workspace
-RUN pnpm -w install --no-frozen-lockfile
+# Build library shared yang dipakai API
+RUN pnpm -r --filter @crive/shared build
 
-# Build lib yang dipakai API (agar ada /packages/shared/dist)
-RUN pnpm -w --filter "@crive/shared" run build
-
-# Jalankan API
+# Jalankan API (pakai source)
 WORKDIR /workspace/apps/api
 EXPOSE 4000
-ENV PORT=4000 HOST=0.0.0.0
-
 CMD ["node", "./src/index.mjs"]
