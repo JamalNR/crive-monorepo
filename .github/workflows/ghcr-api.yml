@@ -6,11 +6,18 @@ on:
     paths:
       - 'apps/api/**'
       - '.github/workflows/ghcr-api.yml'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
   pull_request:
     branches: [ main ]
     paths:
       - 'apps/api/**'
       - '.github/workflows/ghcr-api.yml'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -33,9 +40,9 @@ jobs:
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Login hanya saat push ke main (PR tidak butuh login/push)
+      # Login hanya saat push (bukan PR)
       - name: Login to GHCR
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        if: ${{ github.event_name == 'push' }}
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -51,7 +58,7 @@ jobs:
             type=raw,value=rc
             type=sha,format=short,prefix=sha-
 
-      # Build saja untuk PR (tanpa push)
+      # ---- Build untuk PR (tanpa push) ----
       - name: Build (PR only)
         if: ${{ github.event_name == 'pull_request' }}
         uses: docker/build-push-action@v6
@@ -64,7 +71,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Build + Push saat push ke main
+      # ---- Build & Push untuk main ----
       - name: Build and Push (main)
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: docker/build-push-action@v6
@@ -77,28 +84,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Verifikasi image sudah terbaca oleh GHCR (pull ulang)
-      - name: Verify images (main)
+      # ---- Verifikasi image sudah bisa di-pull ----
+      - name: Verify images (pull)
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         shell: bash
         env:
           IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
           set -euo pipefail
-          SHORT_SHA="${GITHUB_SHA:0:7}"
-
           for i in {1..12}; do
             if docker pull "${IMG}:rc"; then
-              echo "rc OK"
-              break
+              echo "rc OK"; break
             fi
             echo "rc not ready ($i)"; sleep 5
           done
-
+          short_sha="${GITHUB_SHA::7}"
           for i in {1..12}; do
-            if docker pull "${IMG}:sha-${SHORT_SHA}"; then
-              echo "sha-${SHORT_SHA} OK"
-              break
+            if docker pull "${IMG}:sha-${short_sha}"; then
+              echo "sha OK"; break
             fi
             echo "sha not ready ($i)"; sleep 5
           done
