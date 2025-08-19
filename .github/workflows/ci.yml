@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - 'feature/**'
+    branches: [ main, 'feature/**' ]
     paths:
       - "apps/**"
       - "packages/**"
@@ -13,9 +11,7 @@ on:
       - "tsconfig*.json"
       - ".github/workflows/**"
   pull_request:
-    branches:
-      - main
-      - 'feature/**'
+    branches: [ main, 'feature/**' ]
 
 permissions:
   contents: read
@@ -36,26 +32,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: api
-            dir: apps/api
-          - name: admin
-            dir: apps/admin
-          - name: shared
-            dir: packages/shared
+          - { name: api,    dir: apps/api }
+          - { name: admin,  dir: apps/admin }
+          - { name: shared, dir: packages/shared }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Activate pnpm 9
-        run: corepack prepare pnpm@9 --activate
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npx -y pnpm@9 install --frozen-lockfile
       - name: Lint
-        run: pnpm -C ${{ matrix.dir }} run lint
+        run: npx -y pnpm@9 -C ${{ matrix.dir }} run lint
 
   test:
     name: Test (${{ matrix.name }})
@@ -66,30 +55,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: api
-            dir: apps/api
-          - name: admin
-            dir: apps/admin
-          - name: shared
-            dir: packages/shared
-      steps:
+          - { name: api,    dir: apps/api }
+          - { name: admin,  dir: apps/admin }
+          - { name: shared, dir: packages/shared }
+    steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-
-      - name: Ensure pnpm@9 (guaranteed)
-        run: |
-          corepack enable || true
-          npm i -g pnpm@9
-          pnpm --version
-
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+        run: npx -y pnpm@9 install --frozen-lockfile
       - name: Test
-        run: pnpm -C ${{ matrix.dir }} run test --if-present -- --ci --reporter=dot
+        run: npx -y pnpm@9 -C ${{ matrix.dir }} run test --if-present -- --ci --reporter=dot
 
   build:
     name: Build (${{ matrix.name }})
@@ -100,26 +78,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: api
-            dir: apps/api
-          - name: admin
-            dir: apps/admin
-          - name: shared
-            dir: packages/shared
+          - { name: api,    dir: apps/api }
+          - { name: admin,  dir: apps/admin }
+          - { name: shared, dir: packages/shared }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Activate pnpm 9
-        run: corepack prepare pnpm@9 --activate
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npx -y pnpm@9 install --frozen-lockfile
       - name: Build
-        run: pnpm -C ${{ matrix.dir }} run build
+        run: npx -y pnpm@9 -C ${{ matrix.dir }} run build
       - name: Upload API dist
         if: contains(matrix.dir, 'apps/api')
         uses: actions/upload-artifact@v4
