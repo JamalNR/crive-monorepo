@@ -27,7 +27,6 @@ concurrency:
 env:
   NODE_VERSION: '20'
 
-# ---------- JOB: LINT ----------
 jobs:
   lint:
     name: Lint (${{ matrix.name }})
@@ -44,27 +43,20 @@ jobs:
           - name: shared
             dir: packages/shared
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Activate pnpm 9
+        run: corepack prepare pnpm@9 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Lint
         run: pnpm -C ${{ matrix.dir }} run lint
 
-# ---------- JOB: TEST ----------
   test:
     name: Test (${{ matrix.name }})
     runs-on: ubuntu-latest
@@ -81,27 +73,20 @@ jobs:
           - name: shared
             dir: packages/shared
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Activate pnpm 9
+        run: corepack prepare pnpm@9 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Test
         run: pnpm -C ${{ matrix.dir }} run test --if-present -- --ci --reporter=dot
 
-# ---------- JOB: BUILD ----------
   build:
     name: Build (${{ matrix.name }})
     runs-on: ubuntu-latest
@@ -118,27 +103,19 @@ jobs:
           - name: shared
             dir: packages/shared
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Activate pnpm 9
+        run: corepack prepare pnpm@9 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Build
         run: pnpm -C ${{ matrix.dir }} run build
-
-      # ---- Upload artifacts per workspace (optional but enabled to satisfy checklist) ----
       - name: Upload API dist
         if: contains(matrix.dir, 'apps/api')
         uses: actions/upload-artifact@v4
@@ -148,7 +125,6 @@ jobs:
             apps/api/dist
             apps/api/build
           if-no-files-found: ignore
-
       - name: Upload Admin build (.next)
         if: contains(matrix.dir, 'apps/admin')
         uses: actions/upload-artifact@v4
@@ -158,7 +134,6 @@ jobs:
             apps/admin/.next
             apps/admin/out
           if-no-files-found: ignore
-
       - name: Upload Shared dist
         if: contains(matrix.dir, 'packages/shared')
         uses: actions/upload-artifact@v4
