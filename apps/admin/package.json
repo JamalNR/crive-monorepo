@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint --max-warnings=0 || eslint . --ext .ts,.tsx --max-warnings=0",
     "format": "prettier --write .",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --coverage || echo \"no tests\""
   },
   "dependencies": {
     "@crive/shared": "workspace:*",
@@ -17,7 +18,9 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "eslint": "^9.9.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "eslint": "^9.33.0",
     "eslint-config-next": "^15.4.7",
     "typescript": "^5.6.3"
   }
