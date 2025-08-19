@@ -72,23 +72,22 @@ jobs:
             dir: apps/admin
           - name: shared
             dir: packages/shared
-    steps:
+      steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
+
       - name: Ensure pnpm@9 (guaranteed)
         run: |
           corepack enable || true
           npm i -g pnpm@9
           pnpm --version
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Activate pnpm 9
-        run: corepack prepare pnpm@9 --activate
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
       - name: Test
         run: pnpm -C ${{ matrix.dir }} run test --if-present -- --ci --reporter=dot
 
