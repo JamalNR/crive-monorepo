@@ -78,6 +78,11 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
+      - name: Ensure pnpm@9 (guaranteed)
+        run: |
+          corepack enable || true
+          npm i -g pnpm@9
+          pnpm --version
       - name: Enable Corepack
         run: corepack enable
       - name: Activate pnpm 9
