@@ -3,13 +3,6 @@ name: CI
 on:
   push:
     branches: [ main ]
-    paths:
-      - "apps/**"
-      - "packages/**"
-      - "pnpm-lock.yaml"
-      - "package.json"
-      - "tsconfig*.json"
-      - ".github/workflows/**"
   pull_request:
     branches: [ main ]
 
@@ -25,23 +18,21 @@ jobs:
     name: Lint • Test • Build
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env: { CI: true }
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Ensure pnpm@9
+      - name: Install pnpm@9 (global)
         run: |
-          npm i -g pnpm@9
+          sudo npm i -g pnpm@9
+          which pnpm
           pnpm --version
 
-      - name: Install dependencies
+      - name: Install deps
         run: pnpm install --frozen-lockfile
 
       - name: Lint (workspace)
