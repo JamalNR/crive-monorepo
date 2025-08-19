@@ -1,33 +1,168 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [ main ]
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - 'feature/**'
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "tsconfig*.json"
+      - ".github/workflows/**"
+  pull_request:
+    branches:
+      - main
+      - 'feature/**'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+
+# ---------- JOB: LINT ----------
 jobs:
-  build:
+  lint:
+    name: Lint (${{ matrix.name }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            dir: apps/api
+          - name: admin
+            dir: apps/admin
+          - name: shared
+            dir: packages/shared
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
-      - name: Install deps
-        run: pnpm install --no-frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: pnpm -r lint || true
+        run: pnpm -C ${{ matrix.dir }} run lint
 
-      - name: Typecheck
-        run: pnpm -r typecheck || true
+# ---------- JOB: TEST ----------
+  test:
+    name: Test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            dir: apps/api
+          - name: admin
+            dir: apps/admin
+          - name: shared
+            dir: packages/shared
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm -C ${{ matrix.dir }} run test --if-present -- --ci --reporter=dot
+
+# ---------- JOB: BUILD ----------
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            dir: apps/api
+          - name: admin
+            dir: apps/admin
+          - name: shared
+            dir: packages/shared
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: pnpm -r build || true
+        run: pnpm -C ${{ matrix.dir }} run build
+
+      # ---- Upload artifacts per workspace (optional but enabled to satisfy checklist) ----
+      - name: Upload API dist
+        if: contains(matrix.dir, 'apps/api')
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-dist-${{ github.sha }}
+          path: |
+            apps/api/dist
+            apps/api/build
+          if-no-files-found: ignore
+
+      - name: Upload Admin build (.next)
+        if: contains(matrix.dir, 'apps/admin')
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-next-${{ github.sha }}
+          path: |
+            apps/admin/.next
+            apps/admin/out
+          if-no-files-found: ignore
+
+      - name: Upload Shared dist
+        if: contains(matrix.dir, 'packages/shared')
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-dist-${{ github.sha }}
+          path: packages/shared/dist
+          if-no-files-found: ignore
