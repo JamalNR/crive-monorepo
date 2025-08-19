@@ -2,6 +2,7 @@
   "name": "@crive/api",
   "type": "module",
   "scripts": {
-    "start": "node ./src/index.mjs"
+    "start": "node ./src/index.mjs",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0"
   }
 }

@@ -1,33 +1,55 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [ main ]
   push:
     branches: [ main ]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "tsconfig*.json"
+      - ".github/workflows/**"
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  lint-test-build:
+    name: Lint • Test • Build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: true
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
+          cache: 'pnpm'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
-      - name: Install deps
-        run: pnpm install --no-frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm -r lint || true
+      - name: Lint (workspace)
+        run: pnpm -r run lint
 
-      - name: Typecheck
-        run: pnpm -r typecheck || true
+      - name: Test (workspace)
+        run: pnpm -r run test --if-present -- --ci --reporter=dot
 
-      - name: Build
-        run: pnpm -r build || true
+      - name: Build (workspace)
+        run: pnpm -r run build
