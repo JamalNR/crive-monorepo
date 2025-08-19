@@ -14,17 +14,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - component: api
-            dir: apps/api
-          - component: admin
-            dir: apps/admin
-          - component: shared
-            dir: packages/shared
+          - { component: api,   dir: apps/api }
+          - { component: admin, dir: apps/admin }
+          - { component: shared,dir: packages/shared }
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0         # <= konsisten
+      - uses: pnpm/action-setup@v4           # versi dibaca dari package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -41,17 +36,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - component: api
-            dir: apps/api
-          - component: admin
-            dir: apps/admin
-          - component: shared
-            dir: packages/shared
+          - { component: api,   dir: apps/api }
+          - { component: admin, dir: apps/admin }
+          - { component: shared,dir: packages/shared }
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
+      - uses: pnpm/action-setup@v4           # versi dibaca dari package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -70,22 +60,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - component: api
-            dir: apps/api
-            artifact: apps/api/dist
-          - component: admin
-            dir: apps/admin
-            artifact: |
+          - { component: api,   dir: apps/api,        artifact: apps/api/dist }
+          - { component: admin, dir: apps/admin,      artifact: |
               apps/admin/.next
-              apps/admin/out
-          - component: shared
-            dir: packages/shared
-            artifact: packages/shared/dist
+              apps/admin/out }
+          - { component: shared,dir: packages/shared, artifact: packages/shared/dist }
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
+      - uses: pnpm/action-setup@v4           # versi dibaca dari package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 20
