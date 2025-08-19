@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, 'feature/**' ]
+    branches: [ main ]
     paths:
       - "apps/**"
       - "packages/**"
@@ -11,7 +11,7 @@ on:
       - "tsconfig*.json"
       - ".github/workflows/**"
   pull_request:
-    branches: [ main, 'feature/**' ]
+    branches: [ main ]
 
 permissions:
   contents: read
@@ -20,99 +20,36 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  NODE_VERSION: '20'
-
 jobs:
-  lint:
-    name: Lint (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: api,    dir: apps/api }
-          - { name: admin,  dir: apps/admin }
-          - { name: shared, dir: packages/shared }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: npx -y pnpm@9 install --frozen-lockfile
-      - name: Lint
-        run: npx -y pnpm@9 -C ${{ matrix.dir }} run lint
-
-  test:
-    name: Test (${{ matrix.name }})
+  lint-test-build:
+    name: Lint • Test • Build
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: lint
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: api,    dir: apps/api }
-          - { name: admin,  dir: apps/admin }
-          - { name: shared, dir: packages/shared }
+    env:
+      CI: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: npx -y pnpm@9 install --frozen-lockfile
-      - name: Test
-        run: npx -y pnpm@9 -C ${{ matrix.dir }} run test --if-present -- --ci --reporter=dot
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  build:
-    name: Build (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    needs: test
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: api,    dir: apps/api }
-          - { name: admin,  dir: apps/admin }
-          - { name: shared, dir: packages/shared }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
           cache: 'pnpm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Install dependencies
-        run: npx -y pnpm@9 install --frozen-lockfile
-      - name: Build
-        run: npx -y pnpm@9 -C ${{ matrix.dir }} run build
-      - name: Upload API dist
-        if: contains(matrix.dir, 'apps/api')
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-dist-${{ github.sha }}
-          path: |
-            apps/api/dist
-            apps/api/build
-          if-no-files-found: ignore
-      - name: Upload Admin build (.next)
-        if: contains(matrix.dir, 'apps/admin')
-        uses: actions/upload-artifact@v4
-        with:
-          name: admin-next-${{ github.sha }}
-          path: |
-            apps/admin/.next
-            apps/admin/out
-          if-no-files-found: ignore
-      - name: Upload Shared dist
-        if: contains(matrix.dir, 'packages/shared')
-        uses: actions/upload-artifact@v4
-        with:
-          name: shared-dist-${{ github.sha }}
-          path: packages/shared/dist
-          if-no-files-found: ignore
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (workspace)
+        run: pnpm -r run lint
+
+      - name: Test (workspace)
+        run: pnpm -r run test --if-present -- --ci --reporter=dot
+
+      - name: Build (workspace)
+        run: pnpm -r run build
