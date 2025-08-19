@@ -1,6 +1,7 @@
 {
   "name": "api",
   "version": "1.0.0",
+  "private": true,
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
@@ -11,15 +12,16 @@
     "test": "vitest run --coverage || echo \"no tests\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@crive/shared": "workspace:*",
+    "express": "^4.19.2"
+  },
   "devDependencies": {
     "@types/express": "^5.0.3",
     "@types/node": "^20.11.0",
     "eslint": "^9.33.0",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.3.3"
-  },
-  "dependencies": {
-    "@crive/shared": "workspace:*",
-    "express": "^4.19.2"
+    "typescript": "^5.6.3",
+    "vitest": "^2.0.5",
+    "ts-node-dev": "^2.0.0"
   }
 }

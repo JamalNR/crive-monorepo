@@ -1,2 +1,1 @@
-export const ok = true;
-export const hello = () => "hello from shared";
+export const hello = (who: string) => `hello from shared to ${who}`;
