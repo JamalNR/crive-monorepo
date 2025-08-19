@@ -1,0 +1,93 @@
+name: CI Matrix (Lint-Test-Build)
+
+on:
+  push:
+    branches: [ main, "feature/**" ]   # (6) trigger & scope
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint (${{ matrix.component }})         # → status check: "Lint (api/admin/shared)"
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - component: api
+            dir: apps/api
+          - component: admin
+            dir: apps/admin
+          - component: shared
+            dir: packages/shared
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: 'pnpm' }
+      - name: Install (deterministic)            # (8)
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm -C ${{ matrix.dir }} run lint
+
+  test:
+    name: Test (${{ matrix.component }})
+    runs-on: ubuntu-22.04
+    needs: [lint]                                 # (7)
+    strategy:
+      matrix:
+        include:
+          - component: api
+            dir: apps/api
+          - component: admin
+            dir: apps/admin
+          - component: shared
+            dir: packages/shared
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: 'pnpm' }
+      - name: Install (deterministic)
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm -C ${{ matrix.dir }} run typecheck
+      - name: Test (with coverage)
+        run: pnpm -C ${{ matrix.dir }} run test -- --run --coverage
+
+  build:
+    name: Build (${{ matrix.component }})
+    runs-on: ubuntu-22.04
+    needs: [test]                                  # (7)
+    strategy:
+      matrix:
+        include:
+          - component: api
+            dir: apps/api
+            artifact: apps/api/dist
+          - component: admin
+            dir: apps/admin
+            artifact: |
+              apps/admin/.next
+              apps/admin/out
+          - component: shared
+            dir: packages/shared
+            artifact: packages/shared/dist
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: 'pnpm' }
+      - name: Install (deterministic)
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm -C ${{ matrix.dir }} run build
+      - name: Upload build artifacts                 # (9)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.component }}-build
+          path: ${{ matrix.artifact }}
+          if-no-files-found: ignore
