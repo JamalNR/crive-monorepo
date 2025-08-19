@@ -36,7 +36,6 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      # ✅ PASTIKAN PNPM TERSEDIA (fix utama)
       - name: Ensure pnpm@9
         run: |
           npm i -g pnpm@9
