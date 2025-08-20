@@ -1,0 +1,11 @@
+import { ok } from "@crive/shared";
+
+export default function Home() {
+  return (
+    <main style={{ padding: 20 }}>
+      <h1>Admin OK</h1>
+      <p>API: {process.env.NEXT_PUBLIC_API_URL}</p>
+      <p>Shared OK: {ok ? "true" : "false"}</p>
+    </main>
+  );
+}

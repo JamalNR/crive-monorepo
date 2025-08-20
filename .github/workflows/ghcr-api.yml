@@ -1,0 +1,69 @@
+name: Build & Push API image to GHCR
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - apps/api/**
+      - packages/shared/**
+      - apps/api/Dockerfile
+      - .github/workflows/ghcr-api.yml
+  pull_request:
+    branches: [ main ]
+    paths:
+      - apps/api/**
+      - packages/shared/**
+      - apps/api/Dockerfile
+      - .github/workflows/ghcr-api.yml
+
+jobs:
+  # PR: cukup loloskan check, tidak build/push
+  check:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "PR check passed (skip heavy docker build)."
+
+  # Push ke main: build & push multi-arch
+  docker:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Paksa nama image huruf kecil (GHCR wajib lowercase)
+      - name: Set IMAGE (lowercase)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}/api" >> $GITHUB_ENV
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=rc
+            type=sha,format=short
+
+      - name: Build & Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

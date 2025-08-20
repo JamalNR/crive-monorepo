@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install deps
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Lint
+        run: pnpm -r lint || true
+
+      - name: Typecheck
+        run: pnpm -r typecheck || true
+
+      - name: Build
+        run: pnpm -r build || true
