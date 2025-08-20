@@ -1,11 +1,13 @@
-import { ok } from "@crive/shared";
+import { hello, ok } from "@crive/shared";
 
-export default function Home() {
+export default function Page() {
   return (
-    <main style={{ padding: 20 }}>
-      <h1>Admin OK</h1>
+    <main>
+      <h1>Admin</h1>
       <p>API: {process.env.NEXT_PUBLIC_API_URL}</p>
-      <p>Shared OK: {ok ? "true" : "false"}</p>
+      {/* ganti cara pakai ok: panggil fungsinya */}
+      <p>Shared OK: {ok()}</p>
+      <p>{hello()}</p>
     </main>
   );
 }
