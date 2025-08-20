@@ -11,3 +11,10 @@ build/
 # Env
 .env
 .env.*
+
+# Track PNPM lockfile
+pnpm -wlock.yaml
+# Ignore TS build info
+*.tsbuildinfo
+# macOS
+.DS_Store
