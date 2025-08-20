@@ -10,7 +10,14 @@
     "typecheck": "pnpm -r run typecheck || true"
   },
   "devDependencies": {
+    "@eslint/js": "^9.33.0",
     "@types/node": "^24.3.0",
-    "typescript": "^5.9.2"
+    "@typescript-eslint/eslint-plugin": "^8.40.0",
+    "@typescript-eslint/parser": "^8.40.0",
+    "eslint": "^9.33.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.3.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.40.0"
   }
 }
