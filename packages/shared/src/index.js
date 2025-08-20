@@ -1,2 +1,2 @@
-export const hello = () => "hello from shared";
-export const ok = () => "ok";
+export const hello = () => 'hello from shared';
+export const ok = () => 'ok';

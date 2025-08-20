@@ -1,8 +1,10 @@
+/** minimal & kompatibel dgn ESLint v8 */
 module.exports = {
-  extends: ['next/core-web-vitals','prettier'],
+  root: true,
+  extends: ['next/core-web-vitals', 'prettier'],
   parserOptions: { project: './tsconfig.json' },
-  rules: {
-    'unused-imports/no-unused-imports': 'error',
-  },
   plugins: ['unused-imports'],
+  rules: {
+    'unused-imports/no-unused-imports': 'error'
+  }
 };
