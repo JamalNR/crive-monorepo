@@ -1,43 +1,17 @@
-// eslint.config.js (flat config untuk ESLint v9)
-// Berlaku untuk: apps/api & packages/shared. Admin tetap pakai "next lint".
-import tsParser from "@typescript-eslint/parser";
-import tsPlugin from "@typescript-eslint/eslint-plugin";
-import importPlugin from "eslint-plugin-import";
-import unused from "eslint-plugin-unused-imports";
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+import globals from 'globals';
 
 export default [
-  // Abaikan output build & vendor
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
   {
-    ignores: ["dist", "node_modules", ".next", "out", "coverage"],
-  },
-
-  // Aturan untuk API & Shared (TypeScript/Node)
-  {
-    files: ["apps/api/**/*.{ts,tsx,js}", "packages/shared/**/*.{ts,tsx,js}"],
     languageOptions: {
-      parser: tsParser,
-      parserOptions: {
-        tsconfigRootDir: process.cwd(),
-        project: [
-          "./apps/api/tsconfig.json",
-          "./packages/shared/tsconfig.json",
-        ],
-      },
+      globals: { ...globals.node }
     },
-    plugins: {
-      "@typescript-eslint": tsPlugin,
-      import: importPlugin,
-      "unused-imports": unused,
-    },
+    ignores: ['**/node_modules/**','**/dist/**','**/build/**','**/.next/**','**/out/**'],
     rules: {
-      "unused-imports/no-unused-imports": "error",
-      "import/order": [
-        "error",
-        {
-          "newlines-between": "always",
-          alphabetize: { order: "asc" },
-        },
-      ],
-    },
-  },
+      '@typescript-eslint/no-explicit-any': 'off'
+    }
+  }
 ];

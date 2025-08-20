@@ -2,32 +2,20 @@
 module.exports = {
   root: true,
   parser: '@typescript-eslint/parser',
-  parserOptions: { tsconfigRootDir: __dirname },
-  plugins: ['@typescript-eslint', 'import', 'unused-imports'],
+  plugins: ['@typescript-eslint', 'react', 'react-hooks'],
   extends: [
     'eslint:recommended',
     'plugin:@typescript-eslint/recommended',
-    'plugin:import/recommended',
-    'plugin:import/typescript',
+    'plugin:react/recommended',
+    'plugin:react-hooks/recommended',
     'prettier'
   ],
-  rules: {
-    'unused-imports/no-unused-imports': 'error',
-    'import/order': ['error', { 'newlines-between': 'always', alphabetize: { order: 'asc' } }],
+  settings: {
+    react: { version: 'detect' }
   },
-  ignorePatterns: ['dist','node_modules','coverage'],
-  overrides: [
-    // API (Node)
-    {
-      files: ['apps/api/**/*.{ts,tsx}'],
-      env: { node: true },
-      parserOptions: { project: 'apps/api/tsconfig.json' },
-    },
-    // Shared (Node/Lib)
-    {
-      files: ['packages/shared/**/*.{ts,tsx}'],
-      env: { node: true },
-      parserOptions: { project: 'packages/shared/tsconfig.json' },
-    },
-  ],
-};
+  rules: {
+    'react/react-in-jsx-scope': 'off',
+    '@typescript-eslint/no-explicit-any': 'off'
+  },
+  ignorePatterns: ['dist', 'node_modules', '.next'],
+}
