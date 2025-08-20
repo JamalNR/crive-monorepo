@@ -14,7 +14,7 @@ env:
   NODE_VERSION: '20.x'
 
 jobs:
-  # ---------- LINT (matrix per workspace) ----------
+  # ---------- LINT ----------
   lint:
     name: lint (${{ matrix.workspace }})
     runs-on: ubuntu-latest
@@ -25,10 +25,12 @@ jobs:
         workspace: [ 'apps/api', 'apps/admin', 'packages/shared' ]
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
+        with:
+          version: 10.14.0
 
       - uses: actions/setup-node@v4
         with:
@@ -42,7 +44,7 @@ jobs:
         working-directory: ${{ matrix.workspace }}
         run: pnpm run lint
 
-  # ---------- TEST (matrix per workspace) ----------
+  # ---------- TEST ----------
   test:
     name: test (${{ matrix.workspace }})
     runs-on: ubuntu-latest
@@ -54,19 +56,27 @@ jobs:
         workspace: [ 'apps/api', 'apps/admin', 'packages/shared' ]
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
+
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
+        with:
+          version: 10.14.0
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
+
       - name: Install deps (lockfile ketat)
         run: pnpm install --frozen-lockfile
+
       - name: Job Test + Coverage
-        env: { CI: 'true' }
+        env:
+          CI: 'true'
         working-directory: ${{ matrix.workspace }}
         run: pnpm run test:ci
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4
@@ -77,7 +87,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # ---------- BUILD (matrix per workspace) ----------
+  # ---------- BUILD ----------
   build:
     name: build (${{ matrix.workspace }})
     runs-on: ubuntu-latest
@@ -89,18 +99,25 @@ jobs:
         workspace: [ 'apps/api', 'apps/admin', 'packages/shared' ]
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
+
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
+        with:
+          version: 10.14.0
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
+
       - name: Install deps (lockfile ketat)
         run: pnpm install --frozen-lockfile
+
       - name: Job Build
         working-directory: ${{ matrix.workspace }}
         run: pnpm run build
+
       - name: Upload artefak build
         if: success()
         uses: actions/upload-artifact@v4
@@ -112,7 +129,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # ---------- AGGREGATOR (nama stabil untuk required checks) ----------
+  # ---------- GATES ----------
   lint-gate:
     name: job lint
     runs-on: ubuntu-latest
