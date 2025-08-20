@@ -1,17 +1,12 @@
-import js from '@eslint/js';
-import tseslint from 'typescript-eslint';
-import globals from 'globals';
+import next from "eslint-config-next";
+import js from "@eslint/js";
+import ts from "typescript-eslint";
 
 export default [
   js.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...ts.configs.recommended,
+  ...next(),
   {
-    languageOptions: {
-      globals: { ...globals.node }
-    },
-    ignores: ['**/node_modules/**','**/dist/**','**/build/**','**/.next/**','**/out/**'],
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'off'
-    }
-  }
+    ignores: ["node_modules", "dist", ".next"],
+  },
 ];
