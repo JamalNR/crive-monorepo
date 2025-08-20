@@ -9,6 +9,7 @@
     "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
     "format": "prettier --write .",
     "test": "vitest run --coverage || echo \"no tests\"",
+    "test:ci": "pnpm run test",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
