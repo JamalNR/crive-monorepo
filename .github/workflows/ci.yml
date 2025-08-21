@@ -153,3 +153,41 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
       - run: echo "build ${{ matrix.app }} ready"
+  job_lint:
+    name: job lint
+    runs-on: ubuntu-latest
+    needs: [lint]
+    if: ${{ always() }}
+    steps:
+      - name: Verify lint matrices
+        run: |
+          echo "needs.lint.result=${{ needs.lint.result }}"
+          if [ "${{ needs.lint.result }}" != "success" ]; then
+            echo "Lint matrix failed"; exit 1; fi
+          echo "Lint OK"
+
+  job_test:
+    name: job test
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: ${{ always() }}
+    steps:
+      - name: Verify test matrices
+        run: |
+          echo "needs.test.result=${{ needs.test.result }}"
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "Test matrix failed"; exit 1; fi
+          echo "Test OK"
+
+  job_build:
+    name: job build
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: ${{ always() }}
+    steps:
+      - name: Verify build matrices
+        run: |
+          echo "needs.build.result=${{ needs.build.result }}"
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "Build matrix failed"; exit 1; fi
+          echo "Build OK"
