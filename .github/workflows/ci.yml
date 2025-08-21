@@ -1,29 +1,36 @@
 name: CI
 
 on:
-  push: { branches: [ "main", "feature/**" ] }
-  pull_request: { branches: [ "main" ] }
+  push:
+    branches: [ "main", "feature/**" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
   lint:
     name: lint (${{ matrix.app }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { app: [api, admin, shared], node: [20] }
+      matrix:
+        app: [api, admin, shared]
+        node: [20]
     steps:
       - uses: actions/checkout@v4
 
-      # 1) PNPM dulu
+      # PNPM terlebih dahulu (versi 10.4.0)
       - name: Setup PNPM
         uses: pnpm/action-setup@v3
-        with: { version: 10.4.0, run_install: false }
+        with:
+          version: "10.4.0"
+          run_install: false
 
-      # 2) Node tanpa cache (selalu ada)
+      # Node tanpa cache (selalu ada)
       - name: Setup Node
         uses: actions/setup-node@v4
-        with: { node-version: ${{ matrix.node }} }
+        with:
+          node-version: ${{ matrix.node }}
 
-      # 3) Aktifkan cache PNPM HANYA jika lockfile ada
+      # Aktifkan cache PNPM hanya jika lockfile ada
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -32,15 +39,20 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      # 4) Tentukan workspace + siapkan folder node_modules (hindari error path)
-      - name: Set workdir
+      # Tetapkan WORKDIR (ditulis ke $GITHUB_ENV)
+      - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
-          mkdir -p node_modules "${{ env.WORKDIR }}/node_modules"
 
-      # 5) Cache node_modules HANYA jika lockfile ada (kunci pakai hash lockfile)
+      # Gunakan env di langkah berikutnya (hindari /node_modules permission)
+      - name: Prepare node_modules folders
+        run: |
+          mkdir -p node_modules
+          mkdir -p "${{ env.WORKDIR }}/node_modules"
+
+      # Cache node_modules per workspace (hanya jika lockfile ada)
       - name: Cache node_modules
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/cache@v4
@@ -52,19 +64,24 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
 
-      - run: echo "lint ${{ matrix.app }} ready (pnpm + cache guarded)"
+      - run: echo "lint ${{ matrix.app }} ready"
 
   test:
     name: test (${{ matrix.app }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { app: [api, admin, shared], node: [20] }
+      matrix:
+        app: [api, admin, shared]
+        node: [20]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v3
-        with: { version: 10.4.0, run_install: false }
+        with:
+          version: "10.4.0"
+          run_install: false
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ matrix.node }} }
+        with:
+          node-version: ${{ matrix.node }}
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -72,12 +89,15 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - name: Set workdir
+      - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
-          mkdir -p node_modules "${{ env.WORKDIR }}/node_modules"
+      - name: Prepare node_modules folders
+        run: |
+          mkdir -p node_modules
+          mkdir -p "${{ env.WORKDIR }}/node_modules"
       - name: Cache node_modules
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/cache@v4
@@ -88,19 +108,24 @@ jobs:
           key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
-      - run: echo "test ${{ matrix.app }} ready (pnpm + cache guarded)"
+      - run: echo "test ${{ matrix.app }} ready"
 
   build:
     name: build (${{ matrix.app }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { app: [api, admin, shared], node: [20] }
+      matrix:
+        app: [api, admin, shared]
+        node: [20]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v3
-        with: { version: 10.4.0, run_install: false }
+        with:
+          version: "10.4.0"
+          run_install: false
       - uses: actions/setup-node@v4
-        with: { node-version: ${{ matrix.node }} }
+        with:
+          node-version: ${{ matrix.node }}
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -108,12 +133,15 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - name: Set workdir
+      - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
-          mkdir -p node_modules "${{ env.WORKDIR }}/node_modules"
+      - name: Prepare node_modules folders
+        run: |
+          mkdir -p node_modules
+          mkdir -p "${{ env.WORKDIR }}/node_modules"
       - name: Cache node_modules
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/cache@v4
@@ -124,4 +152,4 @@ jobs:
           key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
-      - run: echo "build ${{ matrix.app }} ready (pnpm + cache guarded)"
+      - run: echo "build ${{ matrix.app }} ready"
