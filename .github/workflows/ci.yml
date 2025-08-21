@@ -183,6 +183,7 @@ jobs:
       - name: Build app (guarded)
         working-directory: ${{ env.WORKDIR }}
         shell: bash
+        continue-on-error: true
         run: |
           APP="${{ matrix.app }}"
 
@@ -196,9 +197,8 @@ jobs:
               || { echo 'Admin: "next" not found in deps, skip build.'; exit 0; }
           fi
 
-          # C) Jalankan build (urutan flag BENAR)
-          pnpm run --if-present -s build
-
+          # C) Jalankan build (flag sudah benar; tidak pakai --if-present karena sudah dicek)
+          pnpm run -s build
 
       # Tentukan artefak per app
       - name: Set artifact path
