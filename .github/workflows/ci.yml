@@ -14,20 +14,13 @@ jobs:
       matrix: { app: [api, admin, shared], node: [20] }
     steps:
       - uses: actions/checkout@v4
-
-      # PNPM 10.4.0 (tetap seperti baseline yang hijau)
-      - name: Setup PNPM
-        uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v3
         with:
           version: "10.4.0"
           run_install: false
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-
-      # Cache PNPM (berdasarkan lockfile)
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -35,19 +28,15 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
       - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
-
-      # Siapkan folder cache node_modules agar tidak permission denied
       - name: Prepare node_modules folders
         run: |
           mkdir -p node_modules
           mkdir -p "${{ env.WORKDIR }}/node_modules"
-
       - name: Cache node_modules
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/cache@v4
@@ -58,12 +47,9 @@ jobs:
           key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
-
-      # === Stage 5: Install deps (root workspace) ===
       - name: Install dependencies (workspace)
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
-
       - run: echo "lint ${{ matrix.app }} ready"
 
   test:
@@ -80,7 +66,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -88,18 +73,15 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
       - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
-
       - name: Prepare node_modules folders
         run: |
           mkdir -p node_modules
           mkdir -p "${{ env.WORKDIR }}/node_modules"
-
       - name: Cache node_modules
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/cache@v4
@@ -110,12 +92,9 @@ jobs:
           key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
-
-      # === Stage 5: Install deps (root workspace) ===
       - name: Install dependencies (workspace)
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
-
       - run: echo "test ${{ matrix.app }} ready"
 
   build:
@@ -132,7 +111,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -140,18 +118,15 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
       - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
-
       - name: Prepare node_modules folders
         run: |
           mkdir -p node_modules
           mkdir -p "${{ env.WORKDIR }}/node_modules"
-
       - name: Cache node_modules
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/cache@v4
@@ -162,15 +137,59 @@ jobs:
           key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
-
-      # === Stage 5: Install deps (root workspace) ===
       - name: Install dependencies (workspace)
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
 
+      # === STAGE 7: Build + Upload artifacts ===
+      - name: Build app (if script exists)
+        working-directory: ${{ env.WORKDIR }}
+        run: pnpm run -s build --if-present
+
+      # API → dist/**
+      - name: Upload API dist
+        if: ${{ matrix.app == 'api' && hashFiles('apps/api/dist/**') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-dist-${{ github.sha }}
+          path: apps/api/dist/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Admin → prefer standalone, fallback .next/**
+      - name: Upload Admin standalone
+        if: ${{ matrix.app == 'admin' && hashFiles('apps/admin/.next/standalone/**') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-standalone-${{ github.sha }}
+          path: apps/admin/.next/standalone/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload Admin .next (fallback)
+        if: ${{ matrix.app == 'admin' && hashFiles('apps/admin/.next/**') != '' && hashFiles('apps/admin/.next/standalone/**') == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-next-${{ github.sha }}
+          path: apps/admin/.next/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Shared → dist/** atau build/**
+      - name: Upload Shared dist
+        if: ${{ matrix.app == 'shared' && (hashFiles('packages/shared/dist/**') != '' || hashFiles('packages/shared/build/**') != '') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-dist-${{ github.sha }}
+          path: |
+            packages/shared/dist/**
+            packages/shared/build/**
+          if-no-files-found: ignore
+          retention-days: 7
+
       - run: echo "build ${{ matrix.app }} ready"
 
-  # === Aggregator checks untuk branch protection (ID unik & nama sesuai rule) ===
+  # Aggregator checks (untuk branch protection)
   job_lint:
     name: job lint
     runs-on: ubuntu-latest
