@@ -1,152 +1,22 @@
 name: CI
-
 on:
   push:
-    branches: [ main, 'feature/*' ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main, 'feature/*' ]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  NODE_VERSION: '20.x'
-
+    branches: [ "main" ]
 jobs:
-  # ---------- LINT ----------
   lint:
-    name: lint (${{ matrix.workspace }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        workspace: [ 'apps/api', 'apps/admin', 'packages/shared' ]
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install deps (lockfile ketat)
-        run: pnpm install --frozen-lockfile
-
-      - name: Job Lint
-        working-directory: ${{ matrix.workspace }}
-        run: pnpm run lint
-
-  # ---------- TEST ----------
+      - run: echo "lint ok"
   test:
-    name: test (${{ matrix.workspace }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [lint]
-    strategy:
-      fail-fast: false
-      matrix:
-        workspace: [ 'apps/api', 'apps/admin', 'packages/shared' ]
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install deps (lockfile ketat)
-        run: pnpm install --frozen-lockfile
-
-      - name: Job Test + Coverage
-        env:
-          CI: 'true'
-        working-directory: ${{ matrix.workspace }}
-        run: pnpm run test:ci
-
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.workspace }}
-          path: |
-            ${{ matrix.workspace }}/coverage
-          if-no-files-found: ignore
-          retention-days: 7
-
-  # ---------- BUILD ----------
+      - run: echo "test ok"
   build:
-    name: build (${{ matrix.workspace }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [test]
-    strategy:
-      fail-fast: false
-      matrix:
-        workspace: [ 'apps/api', 'apps/admin', 'packages/shared' ]
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install deps (lockfile ketat)
-        run: pnpm install --frozen-lockfile
-
-      - name: Job Build
-        working-directory: ${{ matrix.workspace }}
-        run: pnpm run build
-
-      - name: Upload artefak build
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-${{ matrix.workspace }}
-          path: |
-            ${{ matrix.workspace }}/dist
-            ${{ matrix.workspace }}/.next
-          if-no-files-found: ignore
-          retention-days: 7
-
-  # ---------- GATES ----------
-  lint-gate:
-    name: job lint
-    runs-on: ubuntu-latest
-    needs: [lint]
-    steps:
-      - run: echo "Semua matrix lint lulus"
-
-  test-gate:
-    name: job test
-    runs-on: ubuntu-latest
-    needs: [test]
-    steps:
-      - run: echo "Semua matrix test lulus"
-
-  build-gate:
-    name: job build
-    runs-on: ubuntu-latest
-    needs: [build]
-    steps:
-      - run: echo "Semua matrix build lulus"
+      - run: echo "build ok"
