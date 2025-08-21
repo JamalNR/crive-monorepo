@@ -1,14 +1,13 @@
 name: CI
 
 on:
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
   push:
     branches: [ "main", "feature/**" ]
   pull_request:
     branches: [ "main" ]
-    
-concurrency:
-  group: ci-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
 
 jobs:
   # =======================
@@ -135,6 +134,7 @@ jobs:
   # =======================
   build:
     name: build (${{ matrix.app }})
+    needs: [lint, test]
     runs-on: ubuntu-latest
     strategy:
       matrix: { app: [api, admin, shared], node: [20] }
