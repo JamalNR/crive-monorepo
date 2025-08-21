@@ -180,9 +180,25 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # === Stage 7: Build per-app (guarded) ===
-      - name: Build app
+      - name: Build app (guarded)
         working-directory: ${{ env.WORKDIR }}
-        run: pnpm run -s build --if-present
+        shell: bash
+        run: |
+          APP="${{ matrix.app }}"
+
+          # A) Skip kalau TIDAK ada script "build"
+          node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.build ? 0 : 1)" \
+            || { echo 'No "build" script, skip.'; exit 0; }
+
+          # B) Khusus admin: kalau belum ada Next di deps, skip agar job tidak merah
+          if [ "$APP" = "admin" ]; then
+            node -e "const p=require('./package.json'); const d=p.dependencies||{}, dv=p.devDependencies||{}; process.exit((d.next||dv.next)?0:1)" \
+              || { echo 'Admin: "next" not found in deps, skip build.'; exit 0; }
+          fi
+
+          # C) Jalankan build (urutan flag BENAR)
+          pnpm run --if-present -s build
+
 
       # Tentukan artefak per app
       - name: Set artifact path
