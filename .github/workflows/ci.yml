@@ -190,3 +190,36 @@ jobs:
       - run: |
           echo "needs.build.result=${{ needs.build.result }}"
           test "${{ needs.build.result }}" = "success"
+
+  job_lint:
+    name: job lint
+    runs-on: ubuntu-latest
+    needs: [lint]
+    if: ${{ always() }}
+    steps:
+      - name: Verify lint matrices
+        run: |
+          echo "needs.lint.result=${{ needs.lint.result }}"
+          test "${{ needs.lint.result }}" = "success"
+
+  job_test:
+    name: job test
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: ${{ always() }}
+    steps:
+      - name: Verify test matrices
+        run: |
+          echo "needs.test.result=${{ needs.test.result }}"
+          test "${{ needs.test.result }}" = "success"
+
+  job_build:
+    name: job build
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: ${{ always() }}
+    steps:
+      - name: Verify build matrices
+        run: |
+          echo "needs.build.result=${{ needs.build.result }}"
+          test "${{ needs.build.result }}" = "success"
