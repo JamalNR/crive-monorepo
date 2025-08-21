@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 concurrency:
-  ggroup: ci-${{ github.event.pull_request.number || github.ref }}
+  ggroup: ci-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 jobs:
