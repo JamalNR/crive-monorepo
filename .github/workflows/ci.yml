@@ -131,6 +131,7 @@ jobs:
   # =======================
   build:
     name: build (${{ matrix.app }})
+    needs: [lint, test]
     runs-on: ubuntu-latest
     strategy:
       matrix: { app: [api, admin, shared], node: [20] }
