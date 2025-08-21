@@ -64,12 +64,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # === Stage 6: Lint ===
-      # Jalankan lint di root (sekali) jika ada script lint di root
       - name: Root lint (once)
         if: ${{ matrix.app == 'api' }}
         run: pnpm run -w -s lint --if-present
 
-      # Jalankan lint di masing-masing package (jika script tersedia)
       - name: App lint
         working-directory: ${{ env.WORKDIR }}
         run: pnpm run -s lint --if-present
@@ -116,10 +114,6 @@ jobs:
           key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
-      # Install deps cukup dilakukan di job lint (sekali). Jika ingin ulang di sini, buka guard berikut:
-      # - name: Install dependencies (workspace)
-      #   if: ${{ hashFiles('pnpm-lock.yaml') != '' && matrix.app == 'api' }}
-      #   run: pnpm install --frozen-lockfile
       - run: echo "test ${{ matrix.app }} ready"
 
   build:
