@@ -11,12 +11,11 @@ jobs:
     name: lint (${{ matrix.app }})
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        app: [api, admin, shared]
-        node: [20]
+      matrix: { app: [api, admin, shared], node: [20] }
     steps:
       - uses: actions/checkout@v4
 
+      # PNPM 10.4.0 (tetap seperti baseline yang hijau)
       - name: Setup PNPM
         uses: pnpm/action-setup@v3
         with:
@@ -28,6 +27,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
+      # Cache PNPM (berdasarkan lockfile)
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -42,6 +42,7 @@ jobs:
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
 
+      # Siapkan folder cache node_modules agar tidak permission denied
       - name: Prepare node_modules folders
         run: |
           mkdir -p node_modules
@@ -69,9 +70,7 @@ jobs:
     name: test (${{ matrix.app }})
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        app: [api, admin, shared]
-        node: [20]
+      matrix: { app: [api, admin, shared], node: [20] }
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v3
@@ -81,6 +80,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -88,15 +88,18 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+
       - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
+
       - name: Prepare node_modules folders
         run: |
           mkdir -p node_modules
           mkdir -p "${{ env.WORKDIR }}/node_modules"
+
       - name: Cache node_modules
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/cache@v4
@@ -107,19 +110,19 @@ jobs:
           key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
+
       # === Stage 5: Install deps (root workspace) ===
       - name: Install dependencies (workspace)
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
+
       - run: echo "test ${{ matrix.app }} ready"
 
   build:
     name: build (${{ matrix.app }})
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        app: [api, admin, shared]
-        node: [20]
+      matrix: { app: [api, admin, shared], node: [20] }
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v3
@@ -129,6 +132,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -136,15 +140,18 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+
       - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
+
       - name: Prepare node_modules folders
         run: |
           mkdir -p node_modules
           mkdir -p "${{ env.WORKDIR }}/node_modules"
+
       - name: Cache node_modules
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/cache@v4
@@ -155,13 +162,15 @@ jobs:
           key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
+
       # === Stage 5: Install deps (root workspace) ===
       - name: Install dependencies (workspace)
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
+
       - run: echo "build ${{ matrix.app }} ready"
 
-  # Aggregator checks untuk branch protection
+  # === Aggregator checks untuk branch protection (ID unik & nama sesuai rule) ===
   job_lint:
     name: job lint
     runs-on: ubuntu-latest
