@@ -58,19 +58,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
 
-      # === Stage 5: Install deps (root workspace, sekali untuk semua) ===
+      # === Stage 5: Install deps (root workspace; sekali saja di matrix 'api') ===
       - name: Install dependencies (workspace)
         if: ${{ hashFiles('pnpm-lock.yaml') != '' && matrix.app == 'api' }}
         run: pnpm install --frozen-lockfile
 
       # === Stage 6: Lint ===
-      - name: Root lint (once)
+      - name: Root lint (once, uses root .eslintrc)
         if: ${{ matrix.app == 'api' }}
-        run: pnpm run -w -s lint --if-present
+        run: pnpm exec eslint . --ext .ts,.tsx,.js,.jsx,.cjs,.mjs --max-warnings=0 --no-error-on-unmatched-pattern
 
-      - name: App lint
+      - name: App lint (per workspace)
         working-directory: ${{ env.WORKDIR }}
-        run: pnpm run -s lint --if-present
+        run: pnpm exec eslint . --ext .ts,.tsx,.js,.jsx,.cjs,.mjs --max-warnings=0 --no-error-on-unmatched-pattern
 
   test:
     name: test (${{ matrix.app }})
@@ -160,7 +160,7 @@ jobs:
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
       - run: echo "build ${{ matrix.app }} ready"
 
-  # Aggregator checks untuk branch protection (nama wajib)
+  # Aggregator checks untuk branch protection
   job_lint:
     name: job lint
     runs-on: ubuntu-latest

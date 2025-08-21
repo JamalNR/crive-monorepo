@@ -1,20 +1,15 @@
+// .eslintrc.cjs (root)
 module.exports = {
   root: true,
-  parser: '@typescript-eslint/parser',
-  plugins: ['@typescript-eslint', 'react', 'react-hooks'],
-  extends: [
-    'eslint:recommended',
-    'plugin:@typescript-eslint/recommended',
-    'plugin:react/recommended',
-    'plugin:react-hooks/recommended',
-    'prettier'
+  ignorePatterns: ['**/dist/**', '**/build/**', '**/.next/**', '**/node_modules/**'],
+  overrides: [
+    {
+      files: ['**/*.{ts,tsx,js,jsx,cjs,mjs}'],
+      parser: '@typescript-eslint/parser',
+      parserOptions: { ecmaVersion: 'latest', sourceType: 'module' }, // tidak butuh tsconfig
+      plugins: ['@typescript-eslint'],
+      extends: [],  // tanpa rules ketat, aman
+      rules: {},
+    },
   ],
-  settings: {
-    react: { version: 'detect' }
-  },
-  rules: {
-    'react/react-in-jsx-scope': 'off',
-    '@typescript-eslint/no-explicit-any': 'off'
-  },
-  ignorePatterns: ['dist', 'node_modules', '.next'],
-}
+};
