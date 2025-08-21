@@ -7,6 +7,9 @@ on:
     branches: [ "main" ]
 
 jobs:
+  # =======================
+  # Matrix: LINT
+  # =======================
   lint:
     name: lint (${{ matrix.app }})
     runs-on: ubuntu-latest
@@ -15,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Tooling (baseline hijau)
       - name: Setup PNPM
         uses: pnpm/action-setup@v3
         with:
@@ -26,6 +30,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
+      # Cache PNPM via lockfile
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -34,12 +39,14 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      # Tentukan WORKDIR per app
       - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
 
+      # Siapkan folder agar cache node_modules aman
       - name: Prepare node_modules folders
         run: |
           mkdir -p node_modules
@@ -56,13 +63,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
 
-      # === Stage 5: Install deps (root workspace) ===
+      # === Stage 5: Install deps (root workspace, sekali) ===
       - name: Install dependencies (workspace)
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
 
+      # Stage 6 (placeholder lint — sesuai baseline yang hijau)
       - run: echo "lint ${{ matrix.app }} ready"
 
+  # =======================
+  # Matrix: TEST
+  # =======================
   test:
     name: test (${{ matrix.app }})
     runs-on: ubuntu-latest
@@ -115,6 +126,9 @@ jobs:
 
       - run: echo "test ${{ matrix.app }} ready"
 
+  # =======================
+  # Matrix: BUILD + ARTEFAK
+  # =======================
   build:
     name: build (${{ matrix.app }})
     runs-on: ubuntu-latest
@@ -122,8 +136,6 @@ jobs:
       matrix: { app: [api, admin, shared], node: [20] }
     steps:
       - uses: actions/checkout@v4
-
-      # Tooling baseline (tetap sesuai Stage-5)
       - uses: pnpm/action-setup@v3
         with:
           version: "10.4.0"
@@ -132,7 +144,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
-      # Cache PNPM (berdasarkan lockfile)
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -141,21 +152,17 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      # Tentukan workdir per app (env.WORKDIR)
       - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
 
-      # Siapkan folder agar cache node_modules tidak permission denied
-      - name: Prepare node_modules folders
       - name: Prepare node_modules folders
         run: |
           mkdir -p node_modules
           mkdir -p "${{ env.WORKDIR }}/node_modules"
 
-      # Cache node_modules per app (opsional, guarded by lockfile)
       - name: Cache node_modules
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/cache@v4
@@ -167,17 +174,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
 
-      # Install deps (root workspace) – konsisten dgn Stage-5
+      # === Stage 5: Install deps (root workspace) ===
       - name: Install dependencies (workspace)
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
 
-      # === Build aplikasi per-app (tidak merusak; hanya jika script ada) ===
+      # === Stage 7: Build per-app (guarded) ===
       - name: Build app
         working-directory: ${{ env.WORKDIR }}
         run: pnpm run -s build --if-present
 
-      # Tentukan artefak yang akan diunggah (per app)
+      # Tentukan artefak per app
       - name: Set artifact path
         id: setpath
         run: |
@@ -200,7 +207,6 @@ jobs:
           echo "ARTIFACT_PATH=$PATH_OUT" >> $GITHUB_ENV
           echo "artifact-path=$PATH_OUT" >> $GITHUB_OUTPUT
 
-      # Upload artefak (hanya jika path ada)
       - name: Upload build artifact
         if: ${{ steps.setpath.outputs.artifact-path != '' }}
         uses: actions/upload-artifact@v4
@@ -212,7 +218,9 @@ jobs:
 
       - run: echo "build ${{ matrix.app }} done"
 
-  # Aggregator checks untuk branch protection
+  # =======================
+  # Aggregator checks (branch protection)
+  # =======================
   job_lint:
     name: job lint
     runs-on: ubuntu-latest
