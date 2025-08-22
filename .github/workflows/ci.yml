@@ -183,6 +183,10 @@ jobs:
         run: |
           pnpm -F ${{ matrix.app }} install --prod=false --no-frozen-lockfile
 
+      - name: Install devDependencies for app
+        run: |
+          pnpm -F ${{ matrix.app }} install --prod=false --no-frozen-lockfile
+
       # === Stage 7: Build per-app (guarded) ===
       - name: Build app (guarded)
         working-directory: ${{ env.WORKDIR }}
