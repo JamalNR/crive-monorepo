@@ -1,26 +1,23 @@
 {
   "name": "api",
   "version": "1.0.0",
+  "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "lint": "eslint . --ext .ts,.tsx,.js --max-warnings=0 --no-error-on-unmatched-pattern",
-    "lint:fix": "pnpm run lint -- --fix",
-    "format": "prettier --write .",
-    "test": "vitest run --coverage || echo \"no tests\"",
-    "test:ci": "pnpm run test",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.3",
-    "@types/node": "^20.19.11",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.3.3"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint --ext .ts,.tsx . --max-warnings=0",
+    "test:ci": "echo \"no tests\""
   },
   "dependencies": {
     "@crive/shared": "workspace:*",
     "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.23",
+    "@types/node": "^20.19.11",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.6.3"
   }
 }
