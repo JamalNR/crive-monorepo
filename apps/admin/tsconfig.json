@@ -12,15 +12,19 @@
       "dom.iterable",
       "esnext"
     ],
-    "noEmit": true,
-    "incremental": true,
-    "isolatedModules": true,
+    "types": [
+      "node",
+      "react",
+      "react-dom"
+    ],
     "plugins": [
       {
         "name": "next"
       }
     ],
-    "types": ["node"],
+    "noEmit": true,
+    "incremental": true,
+    "isolatedModules": true
   },
   "include": [
     "app/**/*",

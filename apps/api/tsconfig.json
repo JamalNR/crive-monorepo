@@ -1,14 +1,20 @@
 {
-  "extends": "../../../tsconfig.base.json",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "moduleResolution": "bundler",
+
     "module": "esnext",
+    "moduleResolution": "bundler",
     "target": "es2022",
+    "lib": ["ES2022"],
+
+    "types": ["node", "express"],
+    "typeRoots": ["./node_modules/@types"],
+
+    "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "types": ["node"]
+    "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*"]
 }
