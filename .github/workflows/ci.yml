@@ -87,6 +87,7 @@ jobs:
 
   build:
     name: build (${{ matrix.app }})
+    needs: [lint, test]   # ⬅️ Stage 8: gate build di belakang lint+test
     runs-on: ubuntu-latest
     strategy:
       matrix: { app: [api, admin, shared], node: [20] }
