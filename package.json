@@ -10,13 +10,20 @@
     "typecheck": "pnpm -r run typecheck || true"
   },
   "devDependencies": {
-  "eslint": "8.57.0",
-  "@eslint/js": "8.57.0",
-  "@typescript-eslint/parser": "7.18.0",
-  "@typescript-eslint/eslint-plugin": "7.18.0",
-  "eslint-config-prettier": "9.1.0",
-  "@types/node": "^24.3.0",
-  "globals": "^13.24.0",
-  "typescript": "^5.9.2"
+    "eslint": "8.57.0",
+    "@eslint/js": "8.57.0",
+    "@typescript-eslint/parser": "7.18.0",
+    "@typescript-eslint/eslint-plugin": "7.18.0",
+    "eslint-config-prettier": "9.1.0",
+    "@types/node": "^24.3.0",
+    "globals": "^13.24.0",
+    "typescript": "^5.9.2"
+  },
+  "pnpm": {
+    "injectWorkspacePackages": true,
+    "overrides": {
+      "cross-spawn": "^7.0.6",
+      "next": "^14.2.4"
+    }
   }
 }
