@@ -1,24 +1,10 @@
-# VCS & OS
 .git
 .gitignore
-.DS_Store
-
-# Node & pnpm
-node_modules
 **/node_modules
-pnpm-store
-.pnpm-store
-**/.pnpm-store
-
-# Build artefacts
-dist
-build
+**/.turbo
 **/dist
-**/build
-.next
-**/.next
-
-# Env & docker
-.env
-.env.*
-docker-compose*.yml
+**/coverage
+**/.env*
+**/Dockerfile*
+**/docker-compose*.yml
+pnpm-debug.log
