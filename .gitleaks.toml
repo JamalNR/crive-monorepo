@@ -5,4 +5,3 @@ useDefault = true
 
 [allowlist]
 paths = [ "\\.git/", "node_modules/" ]
-

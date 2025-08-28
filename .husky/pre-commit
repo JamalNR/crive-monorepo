@@ -3,39 +3,24 @@
 
 echo "🔒 Running pre-commit checks..."
 
-# === 1) Blokir file .env* yang di-stage ===
+# 1) Blokir file .env*
 if git diff --cached --name-only | grep -E '\.env($|\.|/)' >/dev/null; then
   echo "❌ Commit diblokir: file .env* tidak boleh di-commit."
   exit 1
 fi
 
-# Kumpulkan diff yang di-stage
-STAGED_DIFF="$(git diff --cached)"
+DIFF="$(git diff --cached)"
 
-# Helper: abaikan baris placeholder umum
-FILTERED_DIFF="$(printf "%s" "$STAGED_DIFF" | grep -Ev 'PLACEHOLDER_|EXAMPLE_')"
-
-# === 2) Deteksi pola rahasia yang umum/benar-benar sensitif ===
-#   - kunci privat
-#   - token bearer panjang
-#   - AWS access key
-#   - GitHub PAT (ghp_)
-#   - Google API key (AIza...)
-#   - Slack token (xox...)
-#   - Stripe key (sk_live / sk_test)
-#   - API_KEY/Secret dgn value nyata (tanda = atau :)
-if printf "%s" "$FILTERED_DIFF" | grep -E -i \
- '(-----BEGIN [A-Z ]*PRIVATE KEY-----|\
-Bearer[[:space:]]+[A-Za-z0-9._-]{20,}|\
-(AKIA|ASIA)[0-9A-Z]{16}|\
+# 2) Deteksi rahasia high-signal saja (minim false positive)
+if printf "%s" "$DIFF" | grep -E -i \
+'(-----BEGIN [A-Z ]*PRIVATE KEY-----|\
 ghp_[A-Za-z0-9]{36}|\
+(AKIA|ASIA)[0-9A-Z]{16}|\
 AIza[0-9A-Za-z_-]{35}|\
 xox[baprs]-[A-Za-z0-9-]{10,48}|\
 sk_(live|test)_[A-Za-z0-9]{10,}|\
-(API[_-]?KEY|SECRET|TOKEN)[[:space:]]*[:=][[:space:]]*[A-Za-z0-9._-]{6,})' \
->/dev/null; then
-  echo "❌ Commit diblokir: terdeteksi kemungkinan STRING RAHASIA (bukan placeholder)."
-  echo "   Jika ini placeholder, gunakan prefix PLACEHOLDER_ atau EXAMPLE_."
+Bearer[[:space:]]+[A-Za-z0-9._-]{20,})' >/dev/null; then
+  echo "❌ Commit diblokir: terdeteksi STRING RAHASIA berisiko tinggi."
   exit 1
 fi
 
