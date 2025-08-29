@@ -26,21 +26,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH (pakai PRD_SSH_KEY)
-        shell: bash
-        run: |
-          set -e
+      - name: Setup SSH (decode base64)
+          run: |
+          set -euo pipefail
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf "%s" "${{ secrets.PRD_SSH_KEY }}" > ~/.ssh/id_ed25519
+          echo "${{ secrets.PRD_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_ed25519
           sed -i 's/\r$//' ~/.ssh/id_ed25519 || true
           chmod 600 ~/.ssh/id_ed25519
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no deploy@209.97.172.49 'echo SSH_OK'
+          ssh-keygen -lf ~/.ssh/id_ed25519 >/dev/null
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+          deploy@209.97.172.49 'echo SSH_OK && whoami'
 
       - name: Deploy PRD via SSH
         env:
           HOST: 209.97.172.49
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no deploy@$HOST <<'SH'
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o IdentitiesOnly=yes deploy@$HOST <<'SH'
           set -e
           set -a; source /etc/doppler/prd.env; set +a
           cd /deploy
