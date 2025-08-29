@@ -1,8 +1,10 @@
 name: Deploy
+
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -11,31 +13,36 @@ permissions:
 
 jobs:
   deploy-stg:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: stg
     steps:
       - uses: actions/checkout@v4
       - run: echo "STG skip (no staging server)"
 
-deploy-prd:
-  runs-on: ubuntu-latest
-  environment: prd
-  needs: [deploy-stg]
-  steps:
-    - uses: actions/checkout@v4
+  deploy-prd:
+    runs-on: ubuntu-latest
+    environment: prd
+    needs: deploy-stg
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Setup SSH
-      uses: webfactory/ssh-agent@v0.9.0
-      with:
-        ssh-private-key: ${{ secrets.PRD_SSH_KEY }}
+      - name: Setup SSH (pakai PRD_SSH_KEY)
+        shell: bash
+        run: |
+          set -e
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf "%s" "${{ secrets.PRD_SSH_KEY }}" > ~/.ssh/id_ed25519
+          sed -i 's/\r$//' ~/.ssh/id_ed25519 || true
+          chmod 600 ~/.ssh/id_ed25519
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no deploy@209.97.172.49 'echo SSH_OK'
 
-    - name: Deploy PRD via SSH
-      env:
-        HOST: 209.97.172.49
-      run: |
-        ssh -o StrictHostKeyChecking=no root@$HOST <<'SH'
-        set -a; source /etc/doppler/prod.env; set +a
-        cd /deploy
-        doppler run --project crive --config prd -- docker compose up -d --remove-orphans
-        SH
+      - name: Deploy PRD via SSH
+        env:
+          HOST: 209.97.172.49
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no deploy@$HOST <<'SH'
+          set -e
+          set -a; source /etc/doppler/prd.env; set +a
+          cd /deploy
+          doppler run --project crive --config prd -- docker compose up -d --remove-orphans
+          SH
