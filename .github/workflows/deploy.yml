@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup SSH (decode base64)
-          run: |
+        run: |
           set -euo pipefail
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           echo "${{ secrets.PRD_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_ed25519
