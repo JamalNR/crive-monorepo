@@ -28,7 +28,7 @@ deploy-prd:
     - name: Setup SSH
       uses: webfactory/ssh-agent@v0.9.0
       with:
-        ssh-private-key: ${{ secrets.PROD_SSH_KEY }}
+        ssh-private-key: ${{ secrets.PRD_SSH_KEY }}
 
     - name: Deploy PRD via SSH
       env:
