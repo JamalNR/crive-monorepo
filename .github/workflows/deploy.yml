@@ -16,13 +16,7 @@ jobs:
     environment: stg
     steps:
       - uses: actions/checkout@v4
-      - name: Load Doppler (stg)
-        uses: dopplerhq/gh-action@v3
-        with:
-          doppler-token: ${{ secrets.DOPPLER_TOKEN_STG }}
-          project: crive
-          config: stg
-      - run: echo "STG step skipped (no staging server)"
+      - run: echo "STG skip (no staging server)"
 
   deploy-prd:
     if: github.ref == 'refs/heads/main'
@@ -31,12 +25,6 @@ jobs:
     needs: [deploy-stg]
     steps:
       - uses: actions/checkout@v4
-      - name: Load Doppler (prd)
-        uses: dopplerhq/gh-action@v3
-        with:
-          doppler-token: ${{ secrets.DOPPLER_TOKEN_PRD }}
-          project: crive
-          config: prd
       - name: Deploy PRD via SSH
         env:
           HOST: 209.97.172.49
