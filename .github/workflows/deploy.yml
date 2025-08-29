@@ -1,0 +1,48 @@
+name: Deploy
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: none
+
+jobs:
+  deploy-stg:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: stg
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load Doppler (stg)
+        uses: dopplerhq/gh-action@v3
+        with:
+          doppler-token: ${{ secrets.DOPPLER_TOKEN_STG }}
+          project: crive
+          config: stg
+      - run: echo "STG step skipped (no staging server)"
+
+  deploy-prd:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prd
+    needs: [deploy-stg]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load Doppler (prd)
+        uses: dopplerhq/gh-action@v3
+        with:
+          doppler-token: ${{ secrets.DOPPLER_TOKEN_PRD }}
+          project: crive
+          config: prd
+      - name: Deploy PRD via SSH
+        env:
+          HOST: 209.97.172.49
+        run: |
+          ssh -o StrictHostKeyChecking=no root@$HOST <<'SH'
+          set -a; source /etc/doppler/prod.env; set +a
+          cd /deploy
+          doppler run --project crive --config prd -- docker compose up -d --remove-orphans
+          SH
