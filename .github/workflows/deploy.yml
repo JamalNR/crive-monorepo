@@ -1,49 +1,90 @@
 name: Deploy
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-
-permissions:
-  contents: read
-  packages: write
-  id-token: none
+    branches: [ main ]
 
 jobs:
   deploy-stg:
+    name: deploy-stg
     runs-on: ubuntu-latest
-    environment: stg
     steps:
-      - uses: actions/checkout@v4
-      - run: echo "STG skip (no staging server)"
+      - name: No-op (stg)
+        run: echo "stg ok"
 
   deploy-prd:
+    name: deploy-prd
     runs-on: ubuntu-latest
-    environment: prd
     needs: deploy-stg
-    steps:
-      - uses: actions/checkout@v4
+    environment: prd
 
-      - name: Setup SSH (decode base64)
+    steps:
+      - name: Validate required secrets (prd)
+        env:
+          PRD_SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
+          PRD_SSH_USER: ${{ secrets.PRD_SSH_USER }}
+          PRD_SSH_KEY:  ${{ secrets.PRD_SSH_KEY }}
+          PRD_SSH_KEY_B64: ${{ secrets.PRD_SSH_KEY_B64 }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          echo "${{ secrets.PRD_SSH_KEY_B64 }}" | base64 -d > ~/.ssh/id_ed25519
-          sed -i 's/\r$//' ~/.ssh/id_ed25519 || true
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keygen -lf ~/.ssh/id_ed25519 >/dev/null
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
-          deploy@209.97.172.49 'echo SSH_OK && whoami'
+          [[ -n "${PRD_SSH_HOST:-}" ]] || { echo "Missing PRD_SSH_HOST"; exit 1; }
+          [[ -n "${PRD_SSH_USER:-}" ]] || { echo "Missing PRD_SSH_USER"; exit 1; }
+          if [[ -z "${PRD_SSH_KEY:-}" && -z "${PRD_SSH_KEY_B64:-}" ]]; then
+            echo "Missing PRD_SSH_KEY or PRD_SSH_KEY_B64"; exit 1
+          fi
+          echo "Secrets present"
 
-      - name: Deploy PRD via SSH
+      - name: Prepare SSH key (prd)
         env:
-          HOST: 209.97.172.49
+          PRD_SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
+          PRD_SSH_USER: ${{ secrets.PRD_SSH_USER }}
+          PRD_SSH_PORT: ${{ secrets.PRD_SSH_PORT }}
+          PRD_SSH_KEY:  ${{ secrets.PRD_SSH_KEY }}
+          PRD_SSH_KEY_B64: ${{ secrets.PRD_SSH_KEY_B64 }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o IdentitiesOnly=yes deploy@$HOST <<'SH'
-          set -e
-          set -a; source /etc/doppler/prd.env; set +a
-          cd /deploy
-          doppler run --project crive --config prd -- docker compose up -d --remove-orphans
-          SH
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          if [[ -n "${PRD_SSH_KEY_B64:-}" ]]; then
+            echo "$PRD_SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519_prd_ci
+          else
+            echo "$PRD_SSH_KEY" > ~/.ssh/id_ed25519_prd_ci
+          fi
+          sed -i 's/\r$//' ~/.ssh/id_ed25519_prd_ci || true
+          chmod 600 ~/.ssh/id_ed25519_prd_ci
+          {
+            echo "Host prdhost"
+            echo "  HostName ${PRD_SSH_HOST}"
+            echo "  User ${PRD_SSH_USER}"
+            echo "  Port ${PRD_SSH_PORT:-22}"
+            echo "  IdentityFile ~/.ssh/id_ed25519_prd_ci"
+            echo "  StrictHostKeyChecking yes"
+            echo "  BatchMode yes"
+          } >> ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Add known_hosts (prd)
+        env:
+          PRD_SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
+          PRD_SSH_PORT: ${{ secrets.PRD_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          ssh-keyscan -T 5 -p "${PRD_SSH_PORT:-22}" "${PRD_SSH_HOST}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: SSH preflight (whoami & groups)
+        run: |
+          set -x
+          ssh prdhost 'whoami && id -nG && echo PRECHECK_OK'
+
+      - name: Deploy (docker compose)
+        env:
+          DEPLOY_DIR: /deploy
+        run: |
+          set -euo pipefail
+          ssh prdhost "
+            set -euo pipefail
+            cd \"${DEPLOY_DIR}\"
+            docker compose pull
+            docker compose up -d
+            docker compose ps
+          "
