@@ -83,6 +83,11 @@ jobs:
           set -euo pipefail
           ssh prdhost "
             set -euo pipefail
+            doppler run --config prd -- bash -lc 'echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin' && echo "Login Succeeded"
+            API=$(curl -s -o /dev/null -w "%{http_code}" https://api.crive.app/healthz)
+            WEB=$(curl -s -o /dev/null -w "%{http_code}" https://crive.app/healthz)
+            echo "api:$API"; echo "web:$WEB"
+            test "$API" = "200" && test "$WEB" = "200"
             cd \"${DEPLOY_DIR}\"
             docker compose pull
             docker compose up -d
