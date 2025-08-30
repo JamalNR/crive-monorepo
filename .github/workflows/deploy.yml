@@ -77,21 +77,24 @@ jobs:
           ssh prdhost 'whoami && id -nG && echo PRECHECK_OK'
 
       - name: Deploy (docker compose)
-        env:
-          DEPLOY_DIR: /deploy
         run: |
           set -euo pipefail
-          ssh prdhost "bash -lc '
-            set -euo pipefail
-          
-            doppler run --config prd -- bash -lc 'echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin' && echo "Login Succeeded"
-          
-            cd \"${DEPLOY_DIR}\"
-            docker compose pull
-            docker compose up -d
-            docker compose ps
-          
-            API=$(curl -s -o /dev/null -w "%{http_code}" https://api.crive.app/healthz)  
-            WEB=$(curl -s -o /dev/null -w "%{http_code}" https://crive.app/healthz)
-            echo "api:$API"; echo "web:$WEB"
-            test "$API" = "200" && test "$WEB" = "200"
+          ssh prdhost 'bash -s' <<'EOS'
+          set -euo pipefail
+
+          # 1) Login GHCR via Doppler (di SERVER)
+          doppler run --config prd -- bash -lc 'echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin' && echo "Login Succeeded"
+
+          # 2) Deploy
+          cd /deploy
+          docker compose pull
+          docker compose up -d
+          docker compose ps
+
+          # 3) Health check (wajib 200/200)
+          API=$(curl -s -o /dev/null -w "%{http_code}" https://api.crive.app/healthz)
+          WEB=$(curl -s -o /dev/null -w "%{http_code}" https://crive.app/healthz)
+          echo "api:$API"; echo "web:$WEB"
+          test "$API" = "200" && test "$WEB" = "200"
+          EOS
+
