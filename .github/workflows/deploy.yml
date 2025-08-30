@@ -82,11 +82,12 @@ jobs:
           ssh prdhost 'bash -s' <<'EOS'
           set -euo pipefail
 
-          # 1) Ambil secret dari Doppler (config: prd)
-          GHCR_USER=$(doppler secrets get GHCR_USERNAME --config prd --plain)
-          GHCR_PASS=$(doppler secrets get GHCR_TOKEN    --config prd --plain)
+          # 1) Ambil secrets dari Doppler (sebutkan PROJECT + CONFIG)
+          GHCR_USER="$(doppler secrets get GHCR_USERNAME --project crive --config prd --plain)"
+          GHCR_PASS="$(doppler secrets get GHCR_TOKEN    --project crive --config prd --plain)"
+          [ -n "$GHCR_USER" ] && [ -n "$GHCR_PASS" ] || { echo "GHCR secrets missing"; exit 1; }
 
-          # 2) Login GHCR non-interaktif
+          # 2) Login GHCR (non-TTY)
           echo "$GHCR_PASS" | docker login ghcr.io -u "$GHCR_USER" --password-stdin && echo "Login Succeeded"
 
           # 3) Deploy
@@ -96,10 +97,11 @@ jobs:
           docker compose ps
 
           # 4) Health check (wajib 200/200)
-          API=$(curl -s -o /dev/null -w "%{http_code}" https://api.crive.app/healthz)
-          WEB=$(curl -s -o /dev/null -w "%{http_code}" https://crive.app/healthz)
+          API="$(curl -s -o /dev/null -w "%{http_code}" https://api.crive.app/healthz)"
+          WEB="$(curl -s -o /dev/null -w "%{http_code}" https://crive.app/healthz)"
           echo "api:$API"; echo "web:$WEB"
           test "$API" = "200" && test "$WEB" = "200"
           EOS
+
 
 
