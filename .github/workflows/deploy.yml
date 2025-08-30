@@ -95,4 +95,4 @@ jobs:
             WEB=$(curl -s -o /dev/null -w "%{http_code}" https://crive.app/healthz)
             echo "api:$API"; echo "web:$WEB"
             test "$API" = "200" && test "$WEB" = "200"
-          '"
+         '"
