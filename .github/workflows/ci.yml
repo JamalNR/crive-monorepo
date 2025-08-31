@@ -35,14 +35,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      # Tentukan WORKDIR per app
       - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
 
-      # Siapkan folder agar cache node_modules aman
       - name: Prepare node_modules folders
         run: |
           mkdir -p node_modules
@@ -59,12 +57,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
 
-      # === Stage 5: Install deps (root workspace, sekali) ===
       - name: Install dependencies (workspace)
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
 
-      # Stage 6 (placeholder lint — sesuai baseline yang hijau)
       - run: echo "lint ${{ matrix.app }} ready"
 
   test:
@@ -112,7 +108,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
 
-      # === Stage 5: Install deps (root workspace) ===
       - name: Install dependencies (workspace)
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
@@ -172,18 +167,15 @@ jobs:
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
 
-      # pastikan dev deps per app (types, dll) tersedia
       - name: Install devDependencies for app
         run: pnpm -F ${{ matrix.app }} install --prod=false --no-frozen-lockfile
 
-      # bangun shared lebih dulu agar types tersedia saat build api/admin
       - name: Prebuild shared (types ready)
         run: |
           if [ "${{ matrix.app }}" != "shared" ]; then
             pnpm -F @crive/shared build || true
           fi
 
-      # === Build per-app; failure dikonversi jadi sukses (tanpa annotation) ===
       - name: Build app (soft, no annotations)
         working-directory: ${{ env.WORKDIR }}
         shell: bash
@@ -289,7 +281,6 @@ jobs:
   steps:
     - uses: actions/checkout@v4
 
-    # Install Doppler + verifikasi auth (bukti kuat di log)
     - name: Install Doppler CLI
       run: curl -Ls https://cli.doppler.com/install.sh | sh
 
@@ -298,7 +289,6 @@ jobs:
         DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
       run: doppler me
 
-    # --- PERTAHANKAN pola setup yang sama dengan job build-mu sekarang ---
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
@@ -316,7 +306,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pnpm-
 
-    # Jalankan build dengan secrets (dibungkus doppler)
     - name: Build (with Doppler)
       env:
         DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
