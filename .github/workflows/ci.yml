@@ -5,6 +5,7 @@ on:
     branches: [ "main", "feature/**" ]
   pull_request:
     branches: [ "main" ]
+
 jobs:
   lint:
     name: lint (${{ matrix.app }})
@@ -14,7 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Tooling (baseline hijau)
       - name: Setup PNPM
         uses: pnpm/action-setup@v3
         with:
@@ -26,7 +26,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
-      # Cache PNPM via lockfile
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         uses: actions/setup-node@v4
@@ -35,14 +34,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      # Tentukan WORKDIR per app
       - name: Set workdir env
         run: |
           if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
           if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
 
-      # Siapkan folder agar cache node_modules aman
       - name: Prepare node_modules folders
         run: |
           mkdir -p node_modules
@@ -59,12 +56,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
 
-      # === Stage 5: Install deps (root workspace, sekali) ===
-      - name: Install dependencies (workspace)
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        run: pnpm install --frozen-lockfile
-
-      # Stage 6 (placeholder lint — sesuai baseline yang hijau)
       - run: echo "lint ${{ matrix.app }} ready"
 
   test:
@@ -112,11 +103,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
 
-      # === Stage 5: Install deps (root workspace) ===
-      - name: Install dependencies (workspace)
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        run: pnpm install --frozen-lockfile
-
       - run: echo "test ${{ matrix.app }} ready"
 
   build:
@@ -125,7 +111,6 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix: { app: [api, admin, shared], node: [20] }
-
     steps:
       - uses: actions/checkout@v4
 
@@ -172,11 +157,9 @@ jobs:
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
         run: pnpm install --frozen-lockfile
 
-      # pastikan dev deps per app (types, dll) tersedia
       - name: Install devDependencies for app
         run: pnpm -F ${{ matrix.app }} install --prod=false --no-frozen-lockfile
 
-      # bangun shared lebih dulu agar types tersedia saat build api/admin
       - name: Prebuild shared (types ready)
         run: |
           if [ "${{ matrix.app }}" != "shared" ]; then
@@ -188,18 +171,12 @@ jobs:
         shell: bash
         run: |
           APP="${{ matrix.app }}"
-
-          # Skip jika tidak ada script build
           node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.build ? 0 : 1)" \
             || { echo 'Skip: no "build" script.'; exit 0; }
-
-          # Admin: skip bila Next tidak ada
           if [ "$APP" = "admin" ]; then
             node -e "const p=require('./package.json'); const d=p.dependencies||{}, dv=p.devDependencies||{}; process.exit((d.next||dv.next)?0:1)" \
               || { echo 'Skip: admin has no "next" dep.'; exit 0; }
           fi
-
-          # Jalankan build; jika gagal, ubah jadi NOTICE dan tetap exit 0 (tidak munculkan annotation)
           set +e
           pnpm run -s build
           CODE=$?
@@ -241,7 +218,7 @@ jobs:
           retention-days: 7
 
       - run: echo "build ${{ matrix.app }} done"
-      
+
   job_lint:
     name: job lint
     runs-on: ubuntu-latest
