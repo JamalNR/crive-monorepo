@@ -1,0 +1,25 @@
+name: env-check
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - uses: pnpm/action-setup@v3
+        with: { version: 9 }
+      # inject ENV dari Doppler (STG)
+      - name: Inject ENV (Doppler STG)
+        uses: dopplerhq/gh-action@v2
+        with:
+          doppler-token: ${{ secrets.DOPPLER_TOKEN_STG }}
+          project: crive
+          config: stg
+      - name: Validate ENV
+        run: node scripts/validate-env.mjs apps/api apps/admin
