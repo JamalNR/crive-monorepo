@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [ "main" ]
 jobs:
-  # =======================
-  # Matrix: LINT
-  # =======================
   lint:
     name: lint (${{ matrix.app }})
     runs-on: ubuntu-latest
@@ -70,9 +67,6 @@ jobs:
       # Stage 6 (placeholder lint — sesuai baseline yang hijau)
       - run: echo "lint ${{ matrix.app }} ready"
 
-  # =======================
-  # Matrix: TEST
-  # =======================
   test:
     name: test (${{ matrix.app }})
     runs-on: ubuntu-latest
@@ -125,9 +119,6 @@ jobs:
 
       - run: echo "test ${{ matrix.app }} ready"
 
-  # =======================
-  # Matrix: BUILD + ARTEFAK (soft, no annotations)
-  # =======================
   build:
     name: build (${{ matrix.app }})
     needs: [lint, test]
@@ -252,9 +243,6 @@ jobs:
 
       - run: echo "build ${{ matrix.app }} done"
 
-  # =======================
-  # Aggregator checks (branch protection)
-  # =======================
   job_lint:
     name: job lint
     runs-on: ubuntu-latest
