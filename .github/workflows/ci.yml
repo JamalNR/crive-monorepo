@@ -310,9 +310,19 @@ jobs:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
         run: doppler me
 
-      - name: Build (with Doppler)
+      - name: Install workspace deps (with Doppler, lockfile-aware)
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
         run: |
-          doppler run --config prd -- pnpm -r install --frozen-lockfile
-          doppler run --config prd -- pnpm -r build
+          if [[ -f pnpm-lock.yaml ]]; then
+            echo "Lockfile found -> using --frozen-lockfile"
+            doppler run --config prd -- pnpm -r install --frozen-lockfile
+          else
+            echo "No lockfile -> using --no-frozen-lockfile"
+            doppler run --config prd -- pnpm -r install --no-frozen-lockfile
+          fi
+
+      - name: Build app (with Doppler)
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: doppler run --config prd -- pnpm -r build
