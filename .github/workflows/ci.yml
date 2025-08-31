@@ -141,6 +141,29 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Install Doppler CLI
+        run: curl -Ls https://cli.doppler.com/install.sh | sh
+
+      - name: Verify Doppler auth (prd)
+        run: doppler me
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+
+      - name: Probe DATABASE_URL (masked)
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: |
+          echo "::add-mask::$(doppler secrets get DATABASE_URL --config prd --plain)"
+          L=$(doppler secrets get DATABASE_URL --config prd --plain | wc -c)
+          test $L -gt 10 && echo "OK DATABASE_URL length=$L" || (echo "FAIL: empty DATABASE_URL" && exit 1)
+          
+      - name: Build (with Doppler)
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: |
+          doppler run --config prd -- pnpm -r install --frozen-lockfile
+          doppler run --config prd -- pnpm -r build
 
       - name: Install Doppler CLI
         run: curl -Ls https://cli.doppler.com/install.sh | sh
