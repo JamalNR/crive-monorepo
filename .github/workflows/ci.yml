@@ -14,194 +14,190 @@ defaults:
   run:
     shell: bash
 
-# ========== MATRIX & UTIL ==========
-
 env:
   PNPM_VERSION: "10.4.0"
 
-# ========== JOBS: PR (tanpa prd) ==========
+jobs:
+  # ========= PR checks (tanpa environment prd) =========
+  lint:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: lint (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [api, admin, shared]
+        node: [20]
+    steps:
+      - uses: actions/checkout@v4
 
-lint:
-  if: ${{ github.event_name == 'pull_request' }}
-  name: lint (${{ matrix.app }})
-  runs-on: ubuntu-latest
-  strategy:
-    matrix:
-      app: [api, admin, shared]
-      node: [20]
-  steps:
-    - uses: actions/checkout@v4
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
 
-    - name: Setup PNPM
-      uses: pnpm/action-setup@v3
-      with:
-        version: ${{ env.PNPM_VERSION }}
-        run_install: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node }}
+      - name: Lint (if present)
+        run: pnpm -r --if-present lint
 
-    - name: Lint (if present)
-      run: pnpm -r --filter . --if-present lint
+  test:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: test (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [api, admin, shared]
+        node: [20]
+    steps:
+      - uses: actions/checkout@v4
 
-test:
-  if: ${{ github.event_name == 'pull_request' }}
-  name: test (${{ matrix.app }})
-  runs-on: ubuntu-latest
-  strategy:
-    matrix:
-      app: [api, admin, shared]
-      node: [20]
-  steps:
-    - uses: actions/checkout@v4
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
 
-    - name: Setup PNPM
-      uses: pnpm/action-setup@v3
-      with:
-        version: ${{ env.PNPM_VERSION }}
-        run_install: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node }}
+      - name: Install deps (workspace)
+        run: pnpm -r install --frozen-lockfile || true
 
-    - name: Install deps (workspace)
-      run: pnpm -r install --frozen-lockfile || true
+      - name: Test (if present)
+        run: pnpm -r --if-present test -- --ci || true
 
-    - name: Test (if present)
-      run: pnpm -r --if-present test -- --ci || true
+  build:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: build (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    strategy:
+      matrix:
+        app: [api, admin, shared]
+        node: [20]
+    steps:
+      - uses: actions/checkout@v4
 
-build:
-  if: ${{ github.event_name == 'pull_request' }}
-  name: build (${{ matrix.app }})
-  runs-on: ubuntu-latest
-  needs: [lint, test]
-  strategy:
-    matrix:
-      app: [api, admin, shared]
-      node: [20]
-  steps:
-    - uses: actions/checkout@v4
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
 
-    - name: Setup PNPM
-      uses: pnpm/action-setup@v3
-      with:
-        version: ${{ env.PNPM_VERSION }}
-        run_install: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node }}
+      - name: Set workdir env
+        run: |
+          if [[ "${{ matrix.app }}" == "api" ]];   then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
+          if [[ "${{ matrix.app }}" == "admin" ]]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
+          if [[ "${{ matrix.app }}" == "shared" ]]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
 
-    - name: Set workdir env
-      run: |
-        if [[ "${{ matrix.app }}" == "api" ]];   then echo "WORKDIR=apps/api"        >> $GITHUB_ENV; fi
-        if [[ "${{ matrix.app }}" == "admin" ]]; then echo "WORKDIR=apps/admin"      >> $GITHUB_ENV; fi
-        if [[ "${{ matrix.app }}" == "shared" ]]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
+      - name: Install deps (workspace)
+        run: pnpm -r install --frozen-lockfile || true
 
-    - name: Install deps (workspace)
-      run: pnpm -r install --frozen-lockfile || true
+      - name: Build (PR-safe, if present)
+        working-directory: ${{ env.WORKDIR }}
+        run: pnpm --if-present build || true
 
-    - name: Build (PR-safe, if present)
-      working-directory: ${{ env.WORKDIR }}
-      run: pnpm --if-present build || true
+  # ---- Aggregator checks untuk memenuhi Required Checks di PR ----
+  job_lint:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: job lint (pull_request)
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - run: |
+          echo "needs.lint.result=${{ needs.lint.result }}"
+          [[ "${{ needs.lint.result }}" == "failure" ]] && exit 1 || exit 0
 
-# ---- Aggregator checks untuk PR (agar protection "job lint/test/build" terpenuhi) ----
+  job_test:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: job test (pull_request)
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - run: |
+          echo "needs.test.result=${{ needs.test.result }}"
+          [[ "${{ needs.test.result }}" == "failure" ]] && exit 1 || exit 0
 
-job_lint:
-  if: ${{ github.event_name == 'pull_request' }}
-  name: job lint (pull_request)
-  runs-on: ubuntu-latest
-  needs: [lint]
-  steps:
-    - run: |
-        echo "needs.lint.result=${{ needs.lint.result }}"
-        [[ "${{ needs.lint.result }}" == "failure" ]] && exit 1 || exit 0
+  job_build:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: job build (pull_request)
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - run: |
+          echo "needs.build.result=${{ needs.build.result }}"
+          [[ "${{ needs.build.result }}" == "failure" ]] && exit 1 || exit 0
 
-job_test:
-  if: ${{ github.event_name == 'pull_request' }}
-  name: job test (pull_request)
-  runs-on: ubuntu-latest
-  needs: [test]
-  steps:
-    - run: |
-        echo "needs.test.result=${{ needs.test.result }}"
-        [[ "${{ needs.test.result }}" == "failure" ]] && exit 1 || exit 0
+  # ========= Push ke main (pakai environment prd + Doppler) =========
+  build_prd:
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    name: build (prd) (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    environment: prd
+    env:
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+    strategy:
+      matrix:
+        app: [api, admin, shared]
+        node: [20]
+    steps:
+      - uses: actions/checkout@v4
 
-job_build:
-  if: ${{ github.event_name == 'pull_request' }}
-  name: job build (pull_request)
-  runs-on: ubuntu-latest
-  needs: [build]
-  steps:
-    - run: |
-        echo "needs.build.result=${{ needs.build.result }}"
-        [[ "${{ needs.build.result }}" == "failure" ]] && exit 1 || exit 0
+      # Bukti kuat: Doppler terpasang & auth ke ENV=prd
+      - name: Install Doppler CLI
+        run: curl -Ls https://cli.doppler.com/install.sh | sh
 
-# ========== JOB: MAIN (pakai prd + Doppler) ==========
+      - name: Verify Doppler auth (prd)
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: doppler me
 
-build_prd:
-  if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-  name: build (prd) (${{ matrix.app }})
-  runs-on: ubuntu-latest
-  environment: prd
-  env:
-    DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-  strategy:
-    matrix:
-      app: [api, admin, shared]
-      node: [20]
-  steps:
-    - uses: actions/checkout@v4
+      # Setup toolchain (selaras dengan PR)
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
 
-    # --- Bukti kuat: Doppler ter-install & auth ke ENV=prd ---
-    - name: Install Doppler CLI
-      run: curl -Ls https://cli.doppler.com/install.sh | sh
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
 
-    - name: Verify Doppler auth (prd)
-      env:
-        DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-      run: doppler me
+      - name: Set workdir env
+        run: |
+          if [[ "${{ matrix.app }}" == "api" ]];   then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
+          if [[ "${{ matrix.app }}" == "admin" ]]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
+          if [[ "${{ matrix.app }}" == "shared" ]]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
 
-    # --- Setup toolchain (selaras dengan PR) ---
-    - name: Setup PNPM
-      uses: pnpm/action-setup@v3
-      with:
-        version: ${{ env.PNPM_VERSION }}
-        run_install: false
+      # Opsional bukti rahasia tersedia (tanpa bocor)
+      - name: Probe DATABASE_URL (masked)
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: |
+          echo "::add-mask::$(doppler secrets get DATABASE_URL --config prd --plain || true)"
+          L=$(doppler secrets get DATABASE_URL --config prd --plain | wc -c || true)
+          test "${L:-0}" -ge 10 && echo "OK DATABASE_URL length=$L" || echo "WARN: DATABASE_URL not set or short"
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node }}
+      # Build dengan secrets (dibungkus Doppler)
+      - name: Install workspace deps (with Doppler)
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: doppler run --config prd -- pnpm -r install --frozen-lockfile
 
-    - name: Set workdir env
-      run: |
-        if [[ "${{ matrix.app }}" == "api" ]];   then echo "WORKDIR=apps/api"        >> $GITHUB_ENV; fi
-        if [[ "${{ matrix.app }}" == "admin" ]]; then echo "WORKDIR=apps/admin"      >> $GITHUB_ENV; fi
-        if [[ "${{ matrix.app }}" == "shared" ]]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
-
-    # --- Opsional: bukti rahasia tersedia tanpa bocor (cek panjang) ---
-    - name: Probe DATABASE_URL (masked)
-      env:
-        DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-      run: |
-        echo "::add-mask::$(doppler secrets get DATABASE_URL --config prd --plain || true)"
-        L=$(doppler secrets get DATABASE_URL --config prd --plain | wc -c || true)
-        test "${L:-0}" -ge 10 && echo "OK DATABASE_URL length=$L" || echo "WARN: DATABASE_URL not set or very short"
-
-    # --- Build dengan secrets (dibungkus Doppler) ---
-    - name: Install workspace deps (with Doppler)
-      env:
-        DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-      run: doppler run --config prd -- pnpm -r install --frozen-lockfile
-
-    - name: Build app (with Doppler)
-      working-directory: ${{ env.WORKDIR }}
-      env:
-        DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-      run: doppler run --config prd -- pnpm --if-present build
+      - name: Build app (with Doppler)
+        working-directory: ${{ env.WORKDIR }}
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: doppler run --config prd -- pnpm --if-present build
