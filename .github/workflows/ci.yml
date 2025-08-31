@@ -273,17 +273,17 @@ jobs:
           echo "needs.build.result=${{ needs.build.result }}"
           test "${{ needs.build.result }}" = "success"
 
-build_prd:
-  if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-  name: build (prd) (${{ matrix.app }})
-  runs-on: ubuntu-latest
-  environment: prd
-  env:
-    DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-  strategy:
-    matrix:
-      app: [api, admin, shared]
-      node: [20]
+  build_prd:
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    name: build (prd) (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    environment: prd
+    env:
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+    strategy:
+      matrix:
+        app: [api, admin, shared]
+        node: [20]
 
   steps:
     - uses: actions/checkout@v4
@@ -322,4 +322,4 @@ build_prd:
       run: |
         doppler run --config prd -- pnpm -r install --frozen-lockfile
         doppler run --config prd -- pnpm -r build
-
+        
