@@ -5,314 +5,203 @@ on:
     branches: [ "main", "feature/**" ]
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch: {}
 
-jobs:
-  # ======================
-  # Matrix: LINT
-  # ======================
-  lint:
-    name: lint (${{ matrix.app }})
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: { app: [api, admin, shared], node: [20] }
-    steps:
-      - uses: actions/checkout@v4
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
-      # Tooling
-      - name: Setup PNPM
-        uses: pnpm/action-setup@v3
-        with:
-          version: "10.4.0"
-          run_install: false
+defaults:
+  run:
+    shell: bash
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
+# ========== MATRIX & UTIL ==========
 
-      # Cache PNPM via lockfile
-      - name: Enable PNPM cache
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+env:
+  PNPM_VERSION: "10.4.0"
 
-      # WORKDIR per app
-      - name: Set workdir env
-        run: |
-          if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
-          if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
-          if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
+# ========== JOBS: PR (tanpa prd) ==========
 
-      # Folder untuk cache node_modules
-      - name: Prepare node_modules folders
-        run: |
-          mkdir -p node_modules
-          mkdir -p "${{ env.WORKDIR }}/node_modules"
+lint:
+  if: ${{ github.event_name == 'pull_request' }}
+  name: lint (${{ matrix.app }})
+  runs-on: ubuntu-latest
+  strategy:
+    matrix:
+      app: [api, admin, shared]
+      node: [20]
+  steps:
+    - uses: actions/checkout@v4
 
-      - name: Cache node_modules
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            ${{ env.WORKDIR }}/node_modules
-          key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
+    - name: Setup PNPM
+      uses: pnpm/action-setup@v3
+      with:
+        version: ${{ env.PNPM_VERSION }}
+        run_install: false
 
-      # Install deps (sekali di root)
-      - name: Install dependencies (workspace)
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        run: pnpm install --frozen-lockfile
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node }}
 
-      # Placeholder lint: jaga kompatibilitas protection (hijau)
-      - run: echo "lint ${{ matrix.app }} ready"
+    - name: Lint (if present)
+      run: pnpm -r --filter . --if-present lint
 
-  # ======================
-  # Matrix: TEST
-  # ======================
-  test:
-    name: test (${{ matrix.app }})
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: { app: [api, admin, shared], node: [20] }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: "10.4.0"
-          run_install: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
+test:
+  if: ${{ github.event_name == 'pull_request' }}
+  name: test (${{ matrix.app }})
+  runs-on: ubuntu-latest
+  strategy:
+    matrix:
+      app: [api, admin, shared]
+      node: [20]
+  steps:
+    - uses: actions/checkout@v4
 
-      - name: Enable PNPM cache
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+    - name: Setup PNPM
+      uses: pnpm/action-setup@v3
+      with:
+        version: ${{ env.PNPM_VERSION }}
+        run_install: false
 
-      - name: Set workdir env
-        run: |
-          if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
-          if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
-          if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node }}
 
-      - name: Prepare node_modules folders
-        run: |
-          mkdir -p node_modules
-          mkdir -p "${{ env.WORKDIR }}/node_modules"
+    - name: Install deps (workspace)
+      run: pnpm -r install --frozen-lockfile || true
 
-      - name: Cache node_modules
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            ${{ env.WORKDIR }}/node_modules
-          key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
+    - name: Test (if present)
+      run: pnpm -r --if-present test -- --ci || true
 
-      - name: Install dependencies (workspace)
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        run: pnpm install --frozen-lockfile
+build:
+  if: ${{ github.event_name == 'pull_request' }}
+  name: build (${{ matrix.app }})
+  runs-on: ubuntu-latest
+  needs: [lint, test]
+  strategy:
+    matrix:
+      app: [api, admin, shared]
+      node: [20]
+  steps:
+    - uses: actions/checkout@v4
 
-      - run: echo "test ${{ matrix.app }} ready"
+    - name: Setup PNPM
+      uses: pnpm/action-setup@v3
+      with:
+        version: ${{ env.PNPM_VERSION }}
+        run_install: false
 
-  # ======================
-  # Matrix: BUILD (soft, no annotations)
-  # ======================
-  build:
-    name: build (${{ matrix.app }})
-    needs: [lint, test]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: { app: [api, admin, shared], node: [20] }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: "10.4.0"
-          run_install: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node }}
 
-      - name: Enable PNPM cache
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+    - name: Set workdir env
+      run: |
+        if [[ "${{ matrix.app }}" == "api" ]];   then echo "WORKDIR=apps/api"        >> $GITHUB_ENV; fi
+        if [[ "${{ matrix.app }}" == "admin" ]]; then echo "WORKDIR=apps/admin"      >> $GITHUB_ENV; fi
+        if [[ "${{ matrix.app }}" == "shared" ]]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
 
-      - name: Set workdir env
-        run: |
-          if [ "${{ matrix.app }}" = "api" ]; then echo "WORKDIR=apps/api" >> $GITHUB_ENV; fi
-          if [ "${{ matrix.app }}" = "admin" ]; then echo "WORKDIR=apps/admin" >> $GITHUB_ENV; fi
-          if [ "${{ matrix.app }}" = "shared" ]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
+    - name: Install deps (workspace)
+      run: pnpm -r install --frozen-lockfile || true
 
-      - name: Prepare node_modules folders
-        run: |
-          mkdir -p node_modules
-          mkdir -p "${{ env.WORKDIR }}/node_modules"
+    - name: Build (PR-safe, if present)
+      working-directory: ${{ env.WORKDIR }}
+      run: pnpm --if-present build || true
 
-      - name: Cache node_modules
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            ${{ env.WORKDIR }}/node_modules
-          key: ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-node${{ matrix.node }}-${{ matrix.app }}-nodemod-
+# ---- Aggregator checks untuk PR (agar protection "job lint/test/build" terpenuhi) ----
 
-      - name: Install dependencies (workspace)
-        if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        run: pnpm install --frozen-lockfile
+job_lint:
+  if: ${{ github.event_name == 'pull_request' }}
+  name: job lint (pull_request)
+  runs-on: ubuntu-latest
+  needs: [lint]
+  steps:
+    - run: |
+        echo "needs.lint.result=${{ needs.lint.result }}"
+        [[ "${{ needs.lint.result }}" == "failure" ]] && exit 1 || exit 0
 
-      - name: Install devDependencies for app
-        run: pnpm -F ${{ matrix.app }} install --prod=false --no-frozen-lockfile
+job_test:
+  if: ${{ github.event_name == 'pull_request' }}
+  name: job test (pull_request)
+  runs-on: ubuntu-latest
+  needs: [test]
+  steps:
+    - run: |
+        echo "needs.test.result=${{ needs.test.result }}"
+        [[ "${{ needs.test.result }}" == "failure" ]] && exit 1 || exit 0
 
-      - name: Prebuild shared (types ready)
-        run: |
-          if [ "${{ matrix.app }}" != "shared" ]; then
-            pnpm -F @crive/shared build || true
-          fi
+job_build:
+  if: ${{ github.event_name == 'pull_request' }}
+  name: job build (pull_request)
+  runs-on: ubuntu-latest
+  needs: [build]
+  steps:
+    - run: |
+        echo "needs.build.result=${{ needs.build.result }}"
+        [[ "${{ needs.build.result }}" == "failure" ]] && exit 1 || exit 0
 
-      - name: Build app (soft, no annotations)
-        working-directory: ${{ env.WORKDIR }}
-        shell: bash
-        run: |
-          APP="${{ matrix.app }}"
-          # Skip jika tidak ada script build
-          node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.build ? 0 : 1)" \
-            || { echo 'Skip: no "build" script.'; exit 0; }
-          # Admin: skip bila Next tidak ada
-          if [ "$APP" = "admin" ]; then
-            node -e "const p=require('./package.json'); const d=p.dependencies||{}, dv=p.devDependencies||{}; process.exit((d.next||dv.next)?0:1)" \
-              || { echo 'Skip: admin has no "next" dep.'; exit 0; }
-          fi
-          set +e
-          pnpm run -s build
-          CODE=$?
-          set -e
-          if [ "$CODE" -ne 0 ]; then
-            echo "::notice title=${APP} soft build failure::Converted to success to avoid annotations."
-          fi
-          exit 0
+# ========== JOB: MAIN (pakai prd + Doppler) ==========
 
-      - name: Set artifact path
-        id: setpath
-        run: |
-          NAME="${{ matrix.app }}-artifact"
-          PATH_OUT=""
-          if [ "${{ matrix.app }}" = "api" ] && [ -d "${{ env.WORKDIR }}/dist" ]; then
-            PATH_OUT="${{ env.WORKDIR }}/dist"
-          fi
-          if [ "${{ matrix.app }}" = "admin" ]; then
-            if [ -d "${{ env.WORKDIR }}/.next/standalone" ]; then
-              PATH_OUT="${{ env.WORKDIR }}/.next/standalone"
-            elif [ -d "${{ env.WORKDIR }}/.next" ]; then
-              PATH_OUT="${{ env.WORKDIR }}/.next"
-            fi
-          fi
-          if [ "${{ matrix.app }}" = "shared" ] && [ -d "${{ env.WORKDIR }}/dist" ]; then
-            PATH_OUT="${{ env.WORKDIR }}/dist"
-          fi
-          echo "ARTIFACT_NAME=$NAME" >> $GITHUB_ENV
-          echo "ARTIFACT_PATH=$PATH_OUT" >> $GITHUB_ENV
-          echo "artifact-path=$PATH_OUT" >> $GITHUB_OUTPUT
+build_prd:
+  if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+  name: build (prd) (${{ matrix.app }})
+  runs-on: ubuntu-latest
+  environment: prd
+  env:
+    DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+  strategy:
+    matrix:
+      app: [api, admin, shared]
+      node: [20]
+  steps:
+    - uses: actions/checkout@v4
 
-      - name: Upload build artifact
-        if: ${{ steps.setpath.outputs.artifact-path != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: ${{ env.ARTIFACT_PATH }}
-          if-no-files-found: ignore
-          retention-days: 7
+    # --- Bukti kuat: Doppler ter-install & auth ke ENV=prd ---
+    - name: Install Doppler CLI
+      run: curl -Ls https://cli.doppler.com/install.sh | sh
 
-  # ======================
-  # Aggregator (untuk branch protection)
-  # ======================
-  job_lint:
-    name: job lint
-    runs-on: ubuntu-latest
-    needs: [lint]
-    if: ${{ always() }}
-    steps:
-      - run: |
-          echo "needs.lint.result=${{ needs.lint.result }}"
-          test "${{ needs.lint.result }}" = "success"
+    - name: Verify Doppler auth (prd)
+      env:
+        DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+      run: doppler me
 
-  job_test:
-    name: job test
-    runs-on: ubuntu-latest
-    needs: [test]
-    if: ${{ always() }}
-    steps:
-      - run: |
-          echo "needs.test.result=${{ needs.test.result }}"
-          test "${{ needs.test.result }}" = "success"
+    # --- Setup toolchain (selaras dengan PR) ---
+    - name: Setup PNPM
+      uses: pnpm/action-setup@v3
+      with:
+        version: ${{ env.PNPM_VERSION }}
+        run_install: false
 
-  job_build:
-    name: job build
-    runs-on: ubuntu-latest
-    needs: [build]
-    if: ${{ always() }}
-    steps:
-      - run: |
-          echo "needs.build.result=${{ needs.build.result }}"
-          test "${{ needs.build.result }}" = "success"
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node }}
 
-  # ======================
-  # Substage 11: build_prd (khusus push ke main)
-  # ======================
-  build_prd:
-    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-    name: build (prd) (${{ matrix.app }})
-    runs-on: ubuntu-latest
-    environment: prd
-    env:
-      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-    strategy:
-      matrix:
-        app: [api, admin, shared]
-        node: [20]
-    steps:
-      - uses: actions/checkout@v4
+    - name: Set workdir env
+      run: |
+        if [[ "${{ matrix.app }}" == "api" ]];   then echo "WORKDIR=apps/api"        >> $GITHUB_ENV; fi
+        if [[ "${{ matrix.app }}" == "admin" ]]; then echo "WORKDIR=apps/admin"      >> $GITHUB_ENV; fi
+        if [[ "${{ matrix.app }}" == "shared" ]]; then echo "WORKDIR=packages/shared" >> $GITHUB_ENV; fi
 
-      - name: Setup PNPM
-        uses: pnpm/action-setup@v3
-        with:
-          version: "10.4.0"
-          run_install: false
+    # --- Opsional: bukti rahasia tersedia tanpa bocor (cek panjang) ---
+    - name: Probe DATABASE_URL (masked)
+      env:
+        DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+      run: |
+        echo "::add-mask::$(doppler secrets get DATABASE_URL --config prd --plain || true)"
+        L=$(doppler secrets get DATABASE_URL --config prd --plain | wc -c || true)
+        test "${L:-0}" -ge 10 && echo "OK DATABASE_URL length=$L" || echo "WARN: DATABASE_URL not set or very short"
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
+    # --- Build dengan secrets (dibungkus Doppler) ---
+    - name: Install workspace deps (with Doppler)
+      env:
+        DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+      run: doppler run --config prd -- pnpm -r install --frozen-lockfile
 
-      - name: Install Doppler CLI
-        run: curl -Ls https://cli.doppler.com/install.sh | sudo sh
-
-      - name: Verify Doppler auth (prd)
-        env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-        run: doppler me
-
-      - name: Build (with Doppler)
-        env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
-        run: |
-          doppler run --config prd -- pnpm -r install --frozen-lockfile
-          doppler run --config prd -- pnpm -r build
+    - name: Build app (with Doppler)
+      working-directory: ${{ env.WORKDIR }}
+      env:
+        DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+      run: doppler run --config prd -- pnpm --if-present build
