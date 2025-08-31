@@ -284,3 +284,55 @@ jobs:
       - run: |
           echo "needs.build.result=${{ needs.build.result }}"
           test "${{ needs.build.result }}" = "success"
+  # =========================
+  # Substage 11: build_prd (khusus main)
+  # =========================
+  build_prd:
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    name: build (prd) (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    environment: prd
+    env:
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+    strategy:
+      matrix:
+        app: [api, admin, shared]
+        node: [20]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install Doppler + verifikasi auth (bukti kuat di log)
+      - name: Install Doppler CLI
+        run: curl -Ls https://cli.doppler.com/install.sh | sh
+
+      - name: Verify Doppler auth (prd)
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: doppler me
+
+      # --- PERTAHANKAN pola setup yang sama dengan job build-mu sekarang ---
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'pnpm'
+
+      - name: Setup PNPM
+        run: corepack enable
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      # Jalankan build dengan secrets (dibungkus doppler)
+      - name: Build (with Doppler)
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
+        run: |
+          doppler run --config prd -- pnpm -r install --frozen-lockfile
+          doppler run --config prd -- pnpm -r build
