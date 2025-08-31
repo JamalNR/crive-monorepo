@@ -252,9 +252,6 @@ jobs:
 
       - run: echo "build ${{ matrix.app }} done"
 
-  # =======================
-  # Aggregator checks (branch protection)
-  # =======================
   job_lint:
     name: job lint
     runs-on: ubuntu-latest
