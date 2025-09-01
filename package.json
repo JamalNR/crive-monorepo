@@ -12,7 +12,13 @@
     "env:check:prd": "doppler run --project crive --config prd -- node scripts/validate-env.mjs apps/api apps/admin",
     "check:env:local": "node scripts/check-env.js",
     "check:env:ci": "node scripts/check-env.js --ci",
-    "prepare": "husky"
+    "prepare": "husky",
+    "deps:audit:prod": "pnpm audit --prod",
+    "deps:dedupe": "pnpm -w dedupe",
+    "deps:unused": "depcheck --ignores=eslint,husky,typescript",
+    "deps:sbom": "pnpm dlx @cyclonedx/cyclonedx-npm --json --output-file sbom.json",
+    "deps:licenses": "pnpm dlx license-checker-rseidelsohn --production --summary",
+    "deps:verify": "pnpm -v && node -v"
   },
   "devDependencies": {
     "@eslint/js": "8.57.0",
@@ -24,5 +30,12 @@
     "globals": "^13.24.0",
     "husky": "^9.1.7",
     "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">= 24.6.0",
+    "pnpm": ">= 10.14.0"
+  },
+  "pnpm": {
+    "overrides": {}
   }
 }
