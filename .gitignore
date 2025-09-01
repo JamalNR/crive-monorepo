@@ -47,3 +47,8 @@ docker/*.env
 # ===== Misc =====
 tmp/
 temp/
+
+# Doppler local secrets
+doppler.env
+doppler.json
+backups/

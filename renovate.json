@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Asia/Jakarta",
+  "schedule": ["after 09:00 before 18:00 on monday,thursday"],
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": { "enabled": true, "schedule": ["before 08:00 on monday"] },
+  "packageRules": [
+    { "matchManagers": ["npm"], "groupName": "all-minor-patches", "matchUpdateTypes": ["minor","patch"] },
+    { "matchDepTypes": ["devDependencies"], "groupName": "dev-deps (minor/patch)" }
+  ]
+}
