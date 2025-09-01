@@ -5,6 +5,8 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+  workflow_dispatch:    # manual dulu; tidak blocking PR>>>>>>> main
+
 permissions:
   contents: read
 
@@ -17,6 +19,13 @@ jobs:
         with:
           node-version: '24.x'
           cache: pnpm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10.14.2
@@ -30,7 +39,10 @@ jobs:
       - name: SBOM
         run: pnpm run deps:sbom
         continue-on-error: true
+        run: pnpm audit --prod || true         # non-gating: tidak memecah build
+     
+     - name: SBOM
+        run: pnpm dlx cyclonedx-npm --output-format json --output-file reports/sbom.json || true
 
       - name: Licenses
-        run: pnpm run deps:licenses
-        continue-on-error: true
+        run: pnpm -r licenses list --prod || true
