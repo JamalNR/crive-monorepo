@@ -28,3 +28,9 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
           pnpm -r run deps:audit || true
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.14.2 --activate
+      - run: node -v && pnpm -v
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install & audit
+        run: pnpm audit || true
