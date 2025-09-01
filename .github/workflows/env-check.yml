@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-
+  workflow_dispatch:    # manual saja dulu biar tidak ganggu PR
 permissions:
   contents: read
 
@@ -24,3 +24,4 @@ jobs:
           run_install: false
       - run: node -v && pnpm -v
       - run: node scripts/check-env.js
+      # tambahkan step cek env kamu di sini jika perlu

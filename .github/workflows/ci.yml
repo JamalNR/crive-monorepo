@@ -9,9 +9,11 @@ on:
 
 permissions:
   contents: read
+    branches: [main]
 
 jobs:
   lint:
+  job_lint:
     name: lint
     runs-on: ubuntu-latest
     steps:
@@ -20,24 +22,30 @@ jobs:
         with:
           node-version: '24.x'
           cache: 'pnpm'
+          cache: pnpm
+          cache: 'pnpm'              # ⬅️ hanya SEKALI, tidak ada duplikat
           cache-dependency-path: pnpm-lock.yaml
       - uses: pnpm/action-setup@v4
         with:
           version: 10.14.2
           run_install: false
       - run: node -v && pnpm -v
+      - run: pnpm -v && node -v
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r run lint
-
+      - run: pnpm -r lint
   test:
     name: test
     needs: lint
+  job_test:
+    name: test
+    needs: job_lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
+          cache: pnpm
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
       - uses: pnpm/action-setup@v4
@@ -45,17 +53,21 @@ jobs:
           version: 10.14.2
           run_install: false
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r run test
+      - run: pnpm -r test
 
   build:
     name: build
     needs: test
+  job_build:
+    name: build
+    needs: job_test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
+          cache: pnpm
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
       - uses: pnpm/action-setup@v4
@@ -63,4 +75,4 @@ jobs:
           version: 10.14.2
           run_install: false
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r run build
+      - run: pnpm -r build
