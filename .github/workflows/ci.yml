@@ -1,8 +1,12 @@
 name: CI
+
 on:
   pull_request:
   push:
     branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   lint:
@@ -10,49 +14,50 @@ jobs:
     permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
-- uses: actions/checkout@v4
-- uses: actions/setup-node@v4
-  with:
-    node-version: '24.x'
-    cache: pnpm
-- uses: pnpm/action-setup@v4
-  with:
-    version: 10.14.2
-    run_install: false
-- run: pnpm -v && node -v
+      - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-        with: { version: 10.14.2 }
-      - run: node -v && pnpm -v
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.2
+          run_install: false
+      - run: pnpm -v && node -v
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm -r run lint
 
   test:
     runs-on: ubuntu-latest
-    needs: lint
     permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-        with: { version: 10.14.2 }
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.2
+          run_install: false
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm -r run test
 
   build:
     runs-on: ubuntu-latest
-    needs: test
+    needs: [lint, test]
     permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-        with: { version: 10.14.2 }
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.2
+          run_install: false
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm -r run build
