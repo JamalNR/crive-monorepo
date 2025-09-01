@@ -30,6 +30,20 @@ jobs:
           echo "pnpm: $(pnpm -v)"
           echo "node: $(node -v)"
           echo "npm: $(npm -v)"
+      - name: Quick PNPM bootstrap (fallback)
+        run: |
+          set -euxo pipefail
+          npm i -g pnpm@10.14.2
+          echo "pnpm: $(pnpm -v)"
+          echo "node: $(node -v)"
+          echo "npm: $(npm -v)"
+      - name: Quick PNPM bootstrap (fallback)
+        run: |
+          set -euxo pipefail
+          npm i -g pnpm@10.14.2
+          echo "pnpm: $(pnpm -v)"
+          echo "node: $(node -v)"
+          echo "npm: $(npm -v)"
 
       # Tooling (baseline hijau)
       - name: Setup PNPM
@@ -108,6 +122,20 @@ jobs:
           echo "pnpm: $(pnpm -v)"
           echo "node: $(node -v)"
           echo "npm: $(npm -v)"
+      - name: Quick PNPM bootstrap (fallback)
+        run: |
+          set -euxo pipefail
+          npm i -g pnpm@10.14.2
+          echo "pnpm: $(pnpm -v)"
+          echo "node: $(node -v)"
+          echo "npm: $(npm -v)"
+      - name: Quick PNPM bootstrap (fallback)
+        run: |
+          set -euxo pipefail
+          npm i -g pnpm@10.14.2
+          echo "pnpm: $(pnpm -v)"
+          echo "node: $(node -v)"
+          echo "npm: $(npm -v)"
       - uses: pnpm/action-setup@v3
         with:
           version: "10.4.0"
@@ -165,6 +193,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Quick PNPM bootstrap (fallback)
+        run: |
+          set -euxo pipefail
+          npm i -g pnpm@10.14.2
+          echo "pnpm: $(pnpm -v)"
+          echo "node: $(node -v)"
+          echo "npm: $(npm -v)"
+      - name: Quick PNPM bootstrap (fallback)
+        run: |
+          set -euxo pipefail
+          npm i -g pnpm@10.14.2
+          echo "pnpm: $(pnpm -v)"
+          echo "node: $(node -v)"
+          echo "npm: $(npm -v)"
       - name: Quick PNPM bootstrap (fallback)
         run: |
           set -euxo pipefail
