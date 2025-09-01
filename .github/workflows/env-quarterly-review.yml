@@ -1,35 +1,32 @@
-name: env-quarterly-review
+name: ENV quarterly review
 
 on:
   schedule:
-    - cron: '0 8 1 1,4,7,10 *'   # Q1,Q2,Q3,Q4 jam 08:00 UTC
+    # Tiap kuartal, jam 08:00 UTC pada tanggal 1 (Jan/Apr/Jul/Okt)
+    - cron: "0 8 1 1,4,7,10 *"
   workflow_dispatch:
 
 jobs:
   review:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
-
       - uses: actions/setup-node@v4
         with:
-          node-version: '24.x'
-          cache: 'pnpm'
+          node-version: '24.6.0'
+          cache: pnpm
 
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Generate review log
-        run: |
-          bash scripts/env_quarterly_review.sh
-      - name: Commit review log (if changed)
-        run: |
-          git config user.name  "github-actions"
-          git config user.email "actions@github.com"
-          git add docs/env/REVIEW_LOG.md || true
-          git diff --cached --quiet || git commit -m "docs(env): quarterly review log"
-          git diff --cached --quiet || git push
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.14.0'
+          run_install: false
+
+      - name: Install (frozen)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Check ENV (CI)
+        run: node scripts/check-env.js --ci
+
+      - name: Generate quarterly ENV report
+        run: bash docs/env/quarterly_review.sh
