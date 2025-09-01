@@ -2,11 +2,6 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches: [ main ]
-
-permissions:
-  contents: read
     branches: [main]
 
 jobs:
@@ -15,12 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-          cache: pnpm
           cache: 'pnpm'              # ⬅️ hanya SEKALI, tidak ada duplikat
           cache-dependency-path: pnpm-lock.yaml
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10.14.2
@@ -40,14 +36,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-          cache: pnpm
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10.14.2
           run_install: false
-      - run: pnpm -v && node -v
+
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm -r test
 
@@ -55,20 +51,19 @@ jobs:
     name: build
     needs: job_test
     runs-on: ubuntu-latest
-    needs: [lint, test]
-    permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-          cache: pnpm
           cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10.14.2
           run_install: false
-      - run: pnpm -v && node -v
+
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm -r build
