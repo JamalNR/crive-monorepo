@@ -21,7 +21,7 @@ jobs:
 
       # Tooling
       - name: Setup PNPM
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: "10.4.0"
           run_install: false
@@ -82,7 +82,7 @@ jobs:
       matrix: { app: [api, admin, shared], node: [20] }
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
           version: "10.4.0"
           run_install: false
@@ -137,7 +137,7 @@ jobs:
       matrix: { app: [api, admin, shared], node: [20] }
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
           version: "10.4.0"
           run_install: false
@@ -292,7 +292,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup PNPM
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: "10.4.0"
           run_install: false
