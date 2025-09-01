@@ -307,7 +307,7 @@ jobs:
         uses: actions/
         with:
           cache: pnpm
-          node-version: "24".2
+          node-version: "24"
 
       - name: Install Doppler CLI
         run: curl -Ls https://cli.doppler.com/install.sh | sudo sh
