@@ -1,49 +1,35 @@
 name: env-quarterly-review
+
 on:
   schedule:
-    # 1 Jan/Apr/Jul/Okt 03:00 UTC
-    - cron: '0 3 1 1,4,7,10 *'
+    - cron: '0 8 1 1,4,7,10 *'   # Q1,Q2,Q3,Q4 jam 08:00 UTC
   workflow_dispatch:
 
 jobs:
   review:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/
-        with: { node-version: "24" }
-
-      # Inject token Doppler STG & PRD via environment (cukup 1 token dengan akses read)
-      - name: Configure Doppler
-        uses: dopplerhq/gh-action@v2
+      - uses: pnpm/action-setup@v4
         with:
-          cache: pnpm
-          doppler-token: ${{ secrets.DOPPLER_TOKEN_STG }}
-          project: crive
-          config: stg
-        env:
-          DOPPLER_ENABLE_CLI: "true"
+          version: 10.14.0
 
-      # Jalankan script untuk STG & PRD (gunakan CLI doppler langsung)
-      - name: Install Doppler CLI
-        run: curl -Ls https://dl.doppler.com/install.sh | sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'pnpm'
 
-      - name: Quarterly ENV Review
-        id: review
-        env:
-          PROJECT: crive
-          CONFS: "stg prd"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Generate review log
         run: |
-          PATH="$PATH:/usr/local/bin"
-          OUTDIR=$(bash scripts/env_quarterly_review.sh)
-          echo "outdir=$OUTDIR" >> $GITHUB_OUTPUT
-
-      - name: Create PR
-        uses: peter-evans/create-pull-request@v6
-        with:
-          commit-message: "docs(env): quarterly review ${{ steps.review.outputs.outdir }}"
-          title: "ENV Quarterly Review – ${{ steps.review.outputs.outdir }}"
-          body: "Auto-generated review artefacts in ${{ steps.review.outputs.outdir }}.\n\nPlease review RBAC in Doppler dashboard & approve."
-          branch: chore/env-review/${{ steps.review.outputs.outdir }}
-          delete-branch: true
+          bash scripts/env_quarterly_review.sh
+      - name: Commit review log (if changed)
+        run: |
+          git config user.name  "github-actions"
+          git config user.email "actions@github.com"
+          git add docs/env/REVIEW_LOG.md || true
+          git diff --cached --quiet || git commit -m "docs(env): quarterly review log"
+          git diff --cached --quiet || git push

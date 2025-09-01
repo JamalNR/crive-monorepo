@@ -1,37 +1,31 @@
-# .github/workflows/deps-audit.yml
+name: deps-audit
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
 jobs:
   audit:
     runs-on: ubuntu-latest
-    permissions: { contents: read }
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup PNPM
-        uses: pnpm/action-setup@v4
-        with: { version: 9 }   # stabil
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with: { node-version: "24" }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'pnpm'
 
-      - name: Versions
-        run: pnpm -v && node -v
-
-      - name: Install (frozen, ignore scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      # === Satu-satunya gate: audit prod ===
-      - name: Audit (prod only)
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Audit (prod)
         run: pnpm run deps:audit:prod
-
-      # Artefak non-gating: kalau error jangan merah
-      - name: Prepare reports dir
-        run: mkdir -p reports
-
-      - name: SBOM (CycloneDX)
-        run: pnpm run deps:sbom
-        continue-on-error: true
-
-      - name: Licenses
-        run: pnpm run deps:licenses
-        continue-on-error: true
+      - name: SBOM
+        run: pnpm dlx @cyclonedx/cyclonedx-npm --output-format json --output-file reports/sbom.json
+      - name: Licenses (non-gating)
+        run: pnpm -r licenses list --prod || true
