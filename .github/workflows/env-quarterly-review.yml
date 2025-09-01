@@ -1,11 +1,18 @@
 name: env-quarterly-review
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 9 1 */3 *'   # awal kuartal, 09:00 UTC
+
+permissions:
+  contents: read
 
 jobs:
   review:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: bash scripts/quarterly_review.sh
-        shell: bash
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - run: node scripts/check-env.js

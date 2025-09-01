@@ -1,0 +1,59 @@
+name: CI (PR)
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.2
+          run_install: false
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: pnpm
+          cache-dependency-path: '**/pnpm-lock.yaml'
+
+      - run: pnpm -v && node -v
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm -r --if-present lint
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [lint]
+    steps:
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.2
+          run_install: false
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: pnpm
+          cache-dependency-path: '**/pnpm-lock.yaml'
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm -r --if-present test
