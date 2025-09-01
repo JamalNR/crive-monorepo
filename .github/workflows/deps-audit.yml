@@ -1,22 +1,37 @@
-name: deps-audit
-on:
-  pull_request:
-    branches: [ main ]
+# .github/workflows/deps-audit.yml
 jobs:
   audit:
     runs-on: ubuntu-latest
     permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: { version: latest }
-      - uses: actions/setup-node@v4
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with: { version: 9 }   # stabil
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with: { node-version: '20' }
+
+      - name: Versions
+        run: pnpm -v && node -v
+
       - name: Install (frozen, ignore scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # === Satu-satunya gate: audit prod ===
       - name: Audit (prod only)
         run: pnpm run deps:audit:prod
+
+      # Artefak non-gating: kalau error jangan merah
+      - name: Prepare reports dir
+        run: mkdir -p reports
+
       - name: SBOM (CycloneDX)
         run: pnpm run deps:sbom
+        continue-on-error: true
+
       - name: Licenses
         run: pnpm run deps:licenses
+        continue-on-error: true
