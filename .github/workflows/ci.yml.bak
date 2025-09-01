@@ -10,20 +10,12 @@ jobs:
     permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
-- uses: actions/checkout@v4
-- uses: actions/setup-node@v4
-  with:
-    node-version: '24.x'
-    cache: pnpm
-- uses: pnpm/action-setup@v4
-  with:
-    version: 10.14.2
-    run_install: false
-- run: pnpm -v && node -v
+      - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - uses: pnpm/action-setup@v4
         with: { version: 10.14.2 }
       - run: node -v && pnpm -v
       - run: pnpm install --frozen-lockfile --ignore-scripts
@@ -35,10 +27,12 @@ jobs:
     permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - uses: pnpm/action-setup@v4
         with: { version: 10.14.2 }
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm -r run test
@@ -49,10 +43,12 @@ jobs:
     permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - uses: pnpm/action-setup@v4
         with: { version: 10.14.2 }
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm -r run build
