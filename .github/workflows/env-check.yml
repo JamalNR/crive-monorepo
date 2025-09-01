@@ -1,8 +1,6 @@
 name: env-check
-
 on:
   workflow_dispatch:    # manual saja dulu biar tidak ganggu PR
-
 jobs:
   check:
     runs-on: ubuntu-latest
