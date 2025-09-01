@@ -1,54 +1,69 @@
 name: CI
+
 on:
   pull_request:
-  push:
     branches: [main]
 
 jobs:
-  lint:
+  job_lint:
+    name: lint
     runs-on: ubuntu-latest
-    permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.x'
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - uses: pnpm/action-setup@v4
-        with: { version: 10.14.2 }
-      - run: node -v && pnpm -v
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r run lint
 
-  test:
-    runs-on: ubuntu-latest
-    needs: lint
-    permissions: { contents: read }
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-          cache: pnpm
+          cache: 'pnpm'              # ⬅️ hanya SEKALI, tidak ada duplikat
           cache-dependency-path: pnpm-lock.yaml
-      - uses: pnpm/action-setup@v4
-        with: { version: 10.14.2 }
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r run test
 
-  build:
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.2
+          run_install: false
+
+      - run: pnpm -v && node -v
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm -r lint
+
+  job_test:
+    name: test
+    needs: job_lint
     runs-on: ubuntu-latest
-    needs: test
-    permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-          cache: pnpm
+          cache: 'pnpm'
           cache-dependency-path: pnpm-lock.yaml
+
       - uses: pnpm/action-setup@v4
-        with: { version: 10.14.2 }
+        with:
+          version: 10.14.2
+          run_install: false
+
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r run build
+      - run: pnpm -r test
+
+  job_build:
+    name: build
+    needs: job_test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.2
+          run_install: false
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm -r build
