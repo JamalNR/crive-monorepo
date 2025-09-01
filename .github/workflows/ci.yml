@@ -5,13 +5,12 @@ on:
     branches: [main]
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  lint:
+  job_lint:
     name: lint
     runs-on: ubuntu-latest
     steps:
@@ -19,48 +18,38 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.2
-          run_install: false
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.14.2 --activate
       - run: node -v && pnpm -v
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r run lint
+      - run: pnpm -r lint
 
-  test:
+  job_test:
     name: test
-    needs: lint
+    needs: job_lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.2
-          run_install: false
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.14.2 --activate
+      - run: node -v && pnpm -v
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r run test
+      - run: pnpm -r test
 
-  build:
+  job_build:
     name: build
-    needs: test
+    needs: job_test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.2
-          run_install: false
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.14.2 --activate
+      - run: node -v && pnpm -v
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r run build
+      - run: pnpm -r build
