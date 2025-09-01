@@ -2,19 +2,24 @@ name: env-check
 
 on:
   pull_request:
-    branches: [ main ]  # hanya jalan di PR → aman
-  # tidak perlu on:push agar minim risiko
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  env-check:
+  check:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
         with:
-          cache: pnpm
-          node-version: "24"
-      - name: Check .env.example structure (CI, no pnpm)
-        run: node scripts/check-env.js --ci
+          version: 10.14.2
+          run_install: false
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - run: node scripts/check-env.js
