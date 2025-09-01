@@ -1,31 +1,22 @@
 name: deps-audit
-
 on:
   pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   audit:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    permissions: { contents: read }
     steps:
       - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
-
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-          cache: 'pnpm'
-
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.14.2 }
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Audit (prod)
-        run: pnpm run deps:audit:prod
-      - name: SBOM
-        run: pnpm dlx @cyclonedx/cyclonedx-npm --output-format json --output-file reports/sbom.json
-      - name: Licenses (non-gating)
-        run: pnpm -r licenses list --prod || true
+      - run: pnpm run deps:audit:prod
+      - run: pnpm run deps:sbom
+      - run: pnpm run deps:licenses

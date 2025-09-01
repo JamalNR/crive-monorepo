@@ -1,9 +1,5 @@
-name: ENV quarterly review
-
+name: env-quarterly-review
 on:
-  schedule:
-    # Tiap kuartal, jam 08:00 UTC pada tanggal 1 (Jan/Apr/Jul/Okt)
-    - cron: "0 8 1 1,4,7,10 *"
   workflow_dispatch:
 
 jobs:
@@ -11,22 +7,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.6.0'
-          cache: pnpm
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: '10.14.0'
-          run_install: false
-
-      - name: Install (frozen)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Check ENV (CI)
-        run: node scripts/check-env.js --ci
-
-      - name: Generate quarterly ENV report
-        run: bash docs/env/quarterly_review.sh
+      - run: bash scripts/quarterly_review.sh
+        shell: bash
