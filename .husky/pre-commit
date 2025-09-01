@@ -1,27 +1,17 @@
-#!/usr/bin/env bash
-. "$(dirname "$0")/_/husky.sh"
+#!/usr/bin/env sh
+set -e
 
-echo "🔒 Running pre-commit checks..."
+# Block commit file .env* (kecuali .env.example)
+STAGED_ENV="$(git diff --cached --name-only -- . ':(exclude).husky/**' \
+  | awk '/(^|\/)\.env($|\.)(.*)/ && !/\.env\.example$/')"
+[ -n "$STAGED_ENV" ] && echo "❌ Blocked: jangan commit .env*" && echo "$STAGED_ENV" && exit 1
 
-# 1) Blokir file .env*
-if git diff --cached --name-only | grep -E '\.env($|\.|/)' >/dev/null; then
-  echo "❌ Commit diblokir: file .env* tidak boleh di-commit."
+# Secret scan (exclude .husky/** & scripts/** agar tak kena pola contoh di checker)
+if git diff --cached -U0 -- . ':(exclude).husky/**' ':(exclude)scripts/**' \
+ | grep -E -i '^\+[^+].*(sk_live_|sk_test_|AKIA[0-9A-Z]{16}|AIzaSy|xoxb-|-----BEGIN (EC|RSA|OPENSSH) PRIVATE KEY-----)' >/dev/null; then
+  echo "❌ Blocked: terdeteksi pola rahasia di staged changes."
   exit 1
 fi
 
-DIFF="$(git diff --cached)"
-
-# 2) Deteksi rahasia high-signal saja (minim false positive)
-if printf "%s" "$DIFF" | grep -E -i \
-'(-----BEGIN [A-Z ]*PRIVATE KEY-----|\
-ghp_[A-Za-z0-9]{36}|\
-(AKIA|ASIA)[0-9A-Z]{16}|\
-AIza[0-9A-Za-z_-]{35}|\
-xox[baprs]-[A-Za-z0-9-]{10,48}|\
-sk_(live|test)_[A-Za-z0-9]{10,}|\
-Bearer[[:space:]]+[A-Za-z0-9._-]{20,})' >/dev/null; then
-  echo "❌ Commit diblokir: terdeteksi STRING RAHASIA berisiko tinggi."
-  exit 1
-fi
-
-echo "✅ Pre-commit checks passed."
+# Validasi ENV lokal (no-op di CI)
+pnpm -w run check:env:local
