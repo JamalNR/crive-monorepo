@@ -11,13 +11,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/
         with: { node-version: "24" }
 
       # Inject token Doppler STG & PRD via environment (cukup 1 token dengan akses read)
       - name: Configure Doppler
         uses: dopplerhq/gh-action@v2
         with:
+          cache: pnpm
           doppler-token: ${{ secrets.DOPPLER_TOKEN_STG }}
           project: crive
           config: stg

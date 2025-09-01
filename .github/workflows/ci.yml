@@ -27,15 +27,17 @@ jobs:
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/
         with:
+          cache: pnpm
           node-version: ${{ matrix.node }}
 
       # Cache PNPM via lockfile
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        uses: actions/setup-node@v4
+        uses: actions/
         with:
+          cache: pnpm
           node-version: ${{ matrix.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
@@ -86,14 +88,16 @@ jobs:
         with:
           version: "10.4.0"
           run_install: false
-      - uses: actions/setup-node@v4
+      - uses: actions/
         with:
+          cache: pnpm
           node-version: ${{ matrix.node }}
 
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        uses: actions/setup-node@v4
+        uses: actions/
         with:
+          cache: pnpm
           node-version: ${{ matrix.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
@@ -141,14 +145,16 @@ jobs:
         with:
           version: "10.4.0"
           run_install: false
-      - uses: actions/setup-node@v4
+      - uses: actions/
         with:
+          cache: pnpm
           node-version: ${{ matrix.node }}
 
       - name: Enable PNPM cache
         if: ${{ hashFiles('pnpm-lock.yaml') != '' }}
-        uses: actions/setup-node@v4
+        uses: actions/
         with:
+          cache: pnpm
           node-version: ${{ matrix.node }}
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
@@ -298,9 +304,10 @@ jobs:
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/
         with:
-          node-version: ${{ matrix.node }}
+          cache: pnpm
+          node-version: "24".2
 
       - name: Install Doppler CLI
         run: curl -Ls https://cli.doppler.com/install.sh | sudo sh
