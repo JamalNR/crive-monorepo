@@ -1,12 +1,9 @@
 name: deps-audit
-
 on:
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -22,14 +19,11 @@ jobs:
           version: 10.14.2
           run_install: false
       - run: pnpm -v && node -v
-
       - name: Audit (prod)
         run: pnpm run deps:audit:prod
-
       - name: SBOM
         run: pnpm run deps:sbom
         continue-on-error: true
-
       - name: Licenses
         run: pnpm run deps:licenses
         continue-on-error: true
