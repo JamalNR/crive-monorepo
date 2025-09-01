@@ -25,10 +25,12 @@
     "@types/node": "^24.3.0",
     "@typescript-eslint/eslint-plugin": "7.18.0",
     "@typescript-eslint/parser": "7.18.0",
+    "depcheck": "^1.4.7",
     "eslint": "8.57.0",
     "eslint-config-prettier": "9.1.0",
     "globals": "^13.24.0",
     "husky": "^9.1.7",
+    "license-checker-rseidelsohn": "^4.4.2",
     "typescript": "^5.9.2"
   },
   "engines": {
