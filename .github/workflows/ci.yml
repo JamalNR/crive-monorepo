@@ -15,7 +15,7 @@ jobs:
     name: lint (${{ matrix.app }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { app: [api, admin, shared], node: [20] }
+      matrix: { app: [api, admin, shared], node: [24] }
     steps:
       - uses: actions/checkout@v4
 
@@ -79,7 +79,7 @@ jobs:
     name: test (${{ matrix.app }})
     runs-on: ubuntu-latest
     strategy:
-      matrix: { app: [api, admin, shared], node: [20] }
+      matrix: { app: [api, admin, shared], node: [24] }
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -134,7 +134,7 @@ jobs:
     needs: [lint, test]
     runs-on: ubuntu-latest
     strategy:
-      matrix: { app: [api, admin, shared], node: [20] }
+      matrix: { app: [api, admin, shared], node: [24] }
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -287,7 +287,7 @@ jobs:
     strategy:
       matrix:
         app: [api, admin, shared]
-        node: [20]
+        node: [24]
     steps:
       - uses: actions/checkout@v4
 
