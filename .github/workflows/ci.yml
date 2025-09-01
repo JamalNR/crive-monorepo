@@ -22,7 +22,7 @@ jobs:
       - run: corepack prepare pnpm@10.14.2 --activate
       - run: node -v && pnpm -v
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r lint
+      - run: pnpm -r run lint
 
   job_test:
     name: test
@@ -37,7 +37,7 @@ jobs:
       - run: corepack prepare pnpm@10.14.2 --activate
       - run: node -v && pnpm -v
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r test
+      - run: pnpm -r run test
 
   job_build:
     name: build
@@ -52,4 +52,4 @@ jobs:
       - run: corepack prepare pnpm@10.14.2 --activate
       - run: node -v && pnpm -v
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm -r build
+      - run: pnpm -r run build
