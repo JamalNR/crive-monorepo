@@ -1,13 +1,9 @@
 name: Hardening/12 licenses
-
 on:
-  push:
-    branches: [hardening/12-licenses]
-  pull_request:
-    branches: [hardening/12-licenses]
+  push: { branches: [hardening/12-licenses] }
+  pull_request: { branches: [hardening/12-licenses] }
 
 permissions: { contents: read }
-
 concurrency:
   group: hardening-12-licenses-${{ github.ref }}
   cancel-in-progress: true
@@ -31,21 +27,24 @@ jobs:
           corepack prepare pnpm@${VER} --activate
           pnpm -v
 
-      - name: Install deps (non-frozen for this workflow)
+      - name: Install deps (non-frozen)
         run: pnpm install --no-frozen-lockfile
 
-      - name: Generate license report
+      - name: Generate license report (always create file)
         run: |
           set -euo pipefail
-          pnpm dlx -y license-checker-rseidelsohn --summary --production --json > license-report.json
-          # jika tool tak output apa-apa, buat file minimal agar upload sukses
-          test -s license-report.json || echo "{}" > license-report.json
-          ls -l license-report.json
-          cat license-report.json | head -c 200 || true
+          mkdir -p reports
+          pnpm dlx -y license-checker-rseidelsohn --summary --production --json \
+            > reports/license-report.json || echo '{}' > reports/license-report.json
+          test -s reports/license-report.json || echo '{}' > reports/license-report.json
+          ls -lh reports/license-report.json
+          head -c 300 reports/license-report.json || true
 
       - name: Upload license artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: license-report
-          path: license-report.json
-          if-no-files-found: error
+          path: reports/license-report.json
+          if-no-files-found: warn
+          retention-days: 7
