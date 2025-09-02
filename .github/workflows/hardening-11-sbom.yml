@@ -1,0 +1,34 @@
+name: hardening-11-sbom
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardening-11-sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbom:
+    name: CycloneDX SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.2
+          run_install: false
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Generate SBOM
+        run: npx -y @cyclonedx/cyclonedx-npm@latest --output bom.json --spec-version 1.5 || true
+      - name: Upload SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: bom.json
