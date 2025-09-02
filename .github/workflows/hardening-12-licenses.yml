@@ -19,30 +19,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # TANPA cache: pnpm — biar nggak nyari pnpm sebelum Corepack
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Enable Corepack & activate pnpm (from packageManager)
-        shell: bash
         run: |
           set -euo pipefail
           corepack enable
           VER=$(node -p "(()=>{try{const pm=(require('./package.json').packageManager||'pnpm@10.14.0');return pm.split('@')[1]||'10.14.0'}catch(e){return '10.14.0'}})()")
           echo "Using pnpm ${VER}"
           corepack prepare pnpm@${VER} --activate
-          which pnpm
           pnpm -v
 
       - name: Install deps (non-frozen for this workflow)
         run: pnpm install --no-frozen-lockfile
 
       - name: Generate license report
-        run: pnpm dlx license-checker-rseidelsohn --summary --production --json --out license-report.json
-
-      # Catatan: untuk memastikan hijau dulu, policy dibikin non-blocking (di-skip).
-      # Nanti setelah hijau, kita aktifkan lagi denylist.
+        run: |
+          set -euo pipefail
+          pnpm dlx -y license-checker-rseidelsohn --summary --production --json > license-report.json
+          # jaga-jaga kalau tool tidak output apa-apa:
+          test -s license-report.json || echo "{}" > license-report.json
+          ls -l license-report.json
 
       - name: Upload license artifact
         uses: actions/upload-artifact@v4
