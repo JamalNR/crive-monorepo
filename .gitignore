@@ -53,3 +53,5 @@ doppler.env
 doppler.json
 backups/
 .github/workflows/*.bak
+
+.github/workflows/*.bak
