@@ -1,0 +1,9 @@
+
+      - name: Generate license report
+        run: pnpm dlx license-checker-rseidelsohn --summary --production --json --out license-report.json
+
+      - name: Upload license artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.json
