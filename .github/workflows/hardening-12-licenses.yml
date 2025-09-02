@@ -1,0 +1,107 @@
+name: Hardening/12 licenses
+
+on:
+  push:
+    branches:
+      - hardening/12-licenses
+  pull_request:
+    branches:
+      - hardening/12-licenses
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardening-12-licenses-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  licenses:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Enable Corepack & pin pnpm from packageManager
+        run: |
+          corepack enable
+          corepack install
+          pnpm -v
+
+      # Lock sering berubah antar PR; pakai non-frozen agar workflow ini informatif, bukan penghambat
+      - name: Install deps
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Generate license report
+        run: pnpm dlx license-checker-rseidelsohn --summary --production --json --out license-report.json
+
+      - name: Print unique licenses summary
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const j = JSON.parse(fs.readFileSync('license-report.json','utf8'));
+          const set = new Set();
+          for (const info of Object.values(j)) {
+            const raw = String(info.licenses||'').trim();
+            if (!raw) { set.add('UNKNOWN'); continue; }
+            raw.split(/[\s/|,]+/).filter(Boolean).forEach(s => set.add(s));
+          }
+          const arr = Array.from(set).sort();
+          console.log('Detected unique licenses ('+arr.length+'):');
+          console.log(arr.join(', '));
+          JS
+
+      - name: Enforce license policy (denylist)
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const j = JSON.parse(fs.readFileSync('license-report.json','utf8'));
+
+          // Hanya blok lisensi yang benar-benar riskan untuk distribusi tertutup
+          const DENY = new Set([
+            'AGPL-3.0', 'AGPL-3.0-only', 'AGPL-3.0-or-later',
+            'GPL-3.0',  'GPL-3.0-only',  'GPL-3.0-or-later',
+            'GPL-2.0',  'GPL-2.0-only',  'GPL-2.0-or-later',
+            'LGPL-3.0', 'LGPL-3.0-only', 'LGPL-3.0-or-later',
+            'LGPL-2.1', 'LGPL-2.1-only', 'LGPL-2.1-or-later',
+            'SSPL-1.0', 'BUSL-1.1', 'RPL-1.5', 'Prosperity-3.0.0'
+          ]);
+
+          const denied = [];
+          const warned = []; // unknown/multi/empty
+
+          for (const [name, info] of Object.entries(j)) {
+            const raw = String(info.licenses||'').trim();
+            if (!raw) { warned.push({name, lic:'(unknown)'}); continue; }
+            const parts = raw.split(/[\s/|,]+/).filter(Boolean);
+            let hit = false;
+            for (const p of parts) if (DENY.has(p)) { hit = true; break; }
+            if (hit) denied.push({name, lic: raw});
+            else if (parts.length > 1) warned.push({name, lic: raw});
+          }
+
+          if (warned.length) {
+            console.warn('⚠️  WARN (non-blocking): unknown/multiple licenses detected:');
+            for (const w of warned.slice(0,40)) console.warn(` - ${w.name}: ${w.lic}`);
+            if (warned.length > 40) console.warn(` ... and ${warned.length-40} more`);
+          }
+
+          if (denied.length) {
+            console.error('❌ BLOCKED licenses found (denylist):');
+            for (const b of denied) console.error(` - ${b.name}: ${b.lic}`);
+            process.exit(1);
+          }
+
+          console.log('✅ License policy passed (denylist clean)');
+          JS
+
+      - name: Upload license artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.json
