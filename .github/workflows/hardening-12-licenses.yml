@@ -18,7 +18,6 @@ concurrency:
 jobs:
   licenses:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -27,14 +26,53 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      
+      - name: Enable Corepack & activate pnpm (from packageManager)
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          VER=$(node -p "(()=>{try{const pm=(require('./package.json').packageManager||'pnpm@10.14.0');return pm.split('@')[1]||'10.14.0'}catch(e){return '10.14.0'}})()")
+          echo "Using pnpm ${VER}"
+          corepack prepare pnpm@${VER} --activate
+          which pnpm
+          pnpm -v
 
-- name: Enable Corepack & activate pnpm from packageManager
-  run: |
-    corepack enable
-    VER=20 20 12 61 79 80 81 701 702 33 98 100 204 250 395 398 399 400jq -r '.packageManager|split("@")[1] // "10.14.0"' package.json)
-    echo "Using pnpm "
-    corepack prepare pnpm --activate
-    which pnpm || (echo "pnpm not on PATH" && exit 1)
-    pnpm -v
-    
+      - name: Install deps (non-frozen for this workflow)
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Generate license report
+        run: pnpm dlx license-checker-rseidelsohn --summary --production --json --out license-report.json
+
+      - name: Enforce denylist (AGPL/GPL/LGPL/SSPL/BUSL/etc.)
+        shell: bash
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync('license-report.json','utf8'));
+          const DENY = new Set([
+            'AGPL-3.0','AGPL-3.0-only','AGPL-3.0-or-later',
+            'GPL-3.0','GPL-3.0-only','GPL-3.0-or-later',
+            'GPL-2.0','GPL-2.0-only','GPL-2.0-or-later',
+            'LGPL-3.0','LGPL-3.0-only','LGPL-3.0-or-later',
+            'LGPL-2.1','LGPL-2.1-only','LGPL-2.1-or-later',
+            'SSPL-1.0','BUSL-1.1','RPL-1.5','Prosperity-3.0.0'
+          ]);
+          const denied=[];
+          for (const [name, info] of Object.entries(data)) {
+            const raw = String(info.licenses||'').trim();
+            if (!raw) continue;
+            const parts = raw.split(/[\s/|,]+/).filter(Boolean);
+            if (parts.some(p=>DENY.has(p))) denied.push(`${name}: ${raw}`);
+          }
+          if (denied.length) {
+            console.error('❌ Denylisted licenses found:\n' + denied.map(s=>' - '+s).join('\n'));
+            process.exit(1);
+          }
+          console.log('✅ License policy passed (denylist clean)');
+          JS
+
+      - name: Upload license artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.json
