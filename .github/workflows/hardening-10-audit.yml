@@ -1,0 +1,56 @@
+name: hardening-10-audit
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardening-10-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: pnpm audit (baseline-enforced)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node dulu (tanpa cache pnpm)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      # Pastikan pnpm ada
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.2
+          run_install: false
+
+      - name: Install deps (frozen lockfile, no scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: pnpm audit (JSON)
+        run: pnpm audit --json > audit.json || true
+
+      - name: Enforce baseline (no new HIGH/CRITICAL)
+        run: |
+          node -e '
+          const fs=require("fs");
+          const j=fs.existsSync("audit.json")?JSON.parse(fs.readFileSync("audit.json","utf8")):{};
+          const v=(j.metadata?.vulnerabilities)||j.vulnerabilities||{};
+          const now={high:v?.high||0, critical:v?.critical||0};
+          const base=JSON.parse(fs.readFileSync("security/AUDIT_BASELINE.json","utf8"));
+          console.log("Baseline", base, "Now", now);
+          if(now.critical>base.critical || now.high>base.high){
+            console.error("New high/critical vulnerabilities detected above baseline.");
+            process.exit(1);
+          }'
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-json
+          path: audit.json
