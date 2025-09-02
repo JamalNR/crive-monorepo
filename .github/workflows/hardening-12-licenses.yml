@@ -1,0 +1,55 @@
+name: hardening-12-licenses
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardening-12-licenses-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  licenses:
+    name: License report & policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+          package_json_path: package.json
+          version: 10.14.0
+          run_install: false
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate licenses.json
+        run: npx -y license-checker-rseidelsohn --summary --json > licenses.json
+
+      - name: Enforce license policy (denylist/allowlist)
+        run: |
+          node -e '
+          const fs=require("fs");
+          const deny=JSON.parse(fs.readFileSync("security/LICENSE_DENYLIST.json","utf8"));
+          const allow=new Set(JSON.parse(fs.readFileSync("security/LICENSE_ALLOWLIST.json","utf8")).map(s=>s.toLowerCase()));
+          const lic=JSON.parse(fs.readFileSync("licenses.json","utf8"));
+          const bad=[];
+          for(const [pkg,info] of Object.entries(lic)){
+            const name=pkg.split("@")[0].toLowerCase();
+            if(allow.has(name)) continue;
+            const l=(info.licenses||"").toString();
+            if(deny.some(p=>new RegExp(p,"i").test(l))) bad.push({pkg,license:l});
+          }
+          if(bad.length){ console.error("Disallowed licenses:", bad); process.exit(1); }
+          console.log("Licenses OK");'
+
+      - name: Upload license artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: licenses-report
+          path: licenses.json
