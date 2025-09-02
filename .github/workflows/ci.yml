@@ -1,8 +1,9 @@
 name: CI
+
 on:
-  pull_request:
   push:
     branches: [ main ]
+  pull_request:
 
 permissions:
   contents: read
@@ -12,56 +13,60 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
+  job_lint:
     name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # PNPM dulu supaya pasti ada
-      - uses: pnpm/action-setup@v4
+      - name: Use Node 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'pnpm'
+
+      - name: Setup PNPM 10.14.2
+        uses: pnpm/action-setup@v4
         with:
           version: 10.14.2
           run_install: false
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.x'
-
-      - name: Install deps (lockfile, no scripts)
+      - name: Install deps
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Lint
         run: pnpm -w lint
 
-  test:
+  job_test:
     name: test
     runs-on: ubuntu-latest
-    needs: lint
+    needs: job_lint
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'pnpm'
       - uses: pnpm/action-setup@v4
         with:
           version: 10.14.2
           run_install: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.x'
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm -w test --if-present
 
-  build:
+  job_build:
     name: build
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [job_lint, job_test]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'pnpm'
       - uses: pnpm/action-setup@v4
         with:
           version: 10.14.2
           run_install: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.x'
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm -w build --if-present

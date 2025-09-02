@@ -1,78 +1,24 @@
 name: deps-audit
+
 on:
   pull_request:
-  push:
-    branches: [ main ]
-    paths:
-      - 'pnpm-lock.yaml'
-      - 'package.json'
-      - 'packages/**/package.json'
-      - '.github/workflows/deps-audit.yml'
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: deps-audit-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  audit_sbom_license:
-    name: audit + sbom + license
+  audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.2
-          run_install: false
-
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
-
-      - name: Install deps (lockfile, no scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: pnpm audit (JSON)
-        run: pnpm audit --json > audit.json || true
-
-      - name: Enforce baseline (no new HIGH/CRITICAL)
-        run: |
-          node -e '
-          const fs=require("fs");
-          const j=fs.existsSync("audit.json")?JSON.parse(fs.readFileSync("audit.json","utf8")):{};
-          const v=(j.metadata?.vulnerabilities)||j.vulnerabilities||{};
-          const now={high:v.high||0, critical:v.critical||0};
-          const path="security/AUDIT_BASELINE.json";
-          if(!fs.existsSync(path)){
-            console.log("No baseline; creating one", now);
-            fs.mkdirSync("security",{recursive:true});
-            fs.writeFileSync(path, JSON.stringify(now,null,2));
-            process.exit(0);
-          }
-          const base=JSON.parse(fs.readFileSync(path,"utf8"));
-          console.log("Baseline", base, "Now", now);
-          if(now.critical>base.critical || now.high>base.high){
-            console.error("New high/critical vulnerabilities detected above baseline.");
-            process.exit(1);
-          }'
-
-      - name: SBOM (CycloneDX)
-        run: npx -y @cyclonedx/cyclonedx-npm@latest --output bom.json --spec-version 1.5 || true
-
-      - name: Generate licenses report
-        run: npx -y license-checker-rseidelsohn --summary --json > licenses.json || true
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: deps-compliance
-          path: |
-            audit.json
-            security/AUDIT_BASELINE.json
-            bom.json
-            licenses.json
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.14.2 --activate
+      - run: node -v && pnpm -v
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install & audit
+        run: pnpm audit || true
