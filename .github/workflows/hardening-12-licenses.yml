@@ -2,11 +2,9 @@ name: Hardening/12 licenses
 
 on:
   push:
-    branches:
-      - hardening/12-licenses
+    branches: [hardening/12-licenses]
   pull_request:
-    branches:
-      - hardening/12-licenses
+    branches: [hardening/12-licenses]
 
 permissions:
   contents: read
