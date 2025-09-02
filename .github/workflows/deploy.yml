@@ -1,9 +1,7 @@
 name: Deploy
-
 on:
   push:
-    branches: [ main ]
-
+    branches: [main]
 jobs:
   deploy-stg:
     name: deploy-stg
@@ -11,19 +9,17 @@ jobs:
     steps:
       - name: No-op (stg)
         run: echo "stg ok"
-
   deploy-prd:
     name: deploy-prd
     runs-on: ubuntu-latest
     needs: deploy-stg
     environment: prd
-
     steps:
       - name: Validate required secrets (prd)
         env:
           PRD_SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
           PRD_SSH_USER: ${{ secrets.PRD_SSH_USER }}
-          PRD_SSH_KEY:  ${{ secrets.PRD_SSH_KEY }}
+          PRD_SSH_KEY: ${{ secrets.PRD_SSH_KEY }}
           PRD_SSH_KEY_B64: ${{ secrets.PRD_SSH_KEY_B64 }}
         run: |
           set -euo pipefail
@@ -33,13 +29,12 @@ jobs:
             echo "Missing PRD_SSH_KEY or PRD_SSH_KEY_B64"; exit 1
           fi
           echo "Secrets present"
-
       - name: Prepare SSH key (prd)
         env:
           PRD_SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
           PRD_SSH_USER: ${{ secrets.PRD_SSH_USER }}
           PRD_SSH_PORT: ${{ secrets.PRD_SSH_PORT }}
-          PRD_SSH_KEY:  ${{ secrets.PRD_SSH_KEY }}
+          PRD_SSH_KEY: ${{ secrets.PRD_SSH_KEY }}
           PRD_SSH_KEY_B64: ${{ secrets.PRD_SSH_KEY_B64 }}
         run: |
           set -euo pipefail
@@ -61,7 +56,6 @@ jobs:
             echo "  BatchMode yes"
           } >> ~/.ssh/config
           chmod 600 ~/.ssh/config
-
       - name: Add known_hosts (prd)
         env:
           PRD_SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
@@ -70,12 +64,10 @@ jobs:
           set -euo pipefail
           ssh-keyscan -T 5 -p "${PRD_SSH_PORT:-22}" "${PRD_SSH_HOST}" >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
-
       - name: SSH preflight (whoami & groups)
         run: |
           set -x
           ssh prdhost 'whoami && id -nG && echo PRECHECK_OK'
-
       - name: Deploy (docker compose)
         run: |
           set -euo pipefail
@@ -102,6 +94,3 @@ jobs:
           echo "api:$API"; echo "web:$WEB"
           test "$API" = "200" && test "$WEB" = "200"
           EOS
-
-
-
