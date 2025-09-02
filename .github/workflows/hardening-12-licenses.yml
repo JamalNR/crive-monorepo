@@ -2,6 +2,11 @@ name: hardening-12-licenses
 on:
   pull_request:
   workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hardening-12-licenses-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -19,6 +24,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
+          
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
