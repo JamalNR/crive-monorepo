@@ -2,16 +2,8 @@ name: hardening-12-licenses
 on:
   pull_request:
   workflow_dispatch:
-permissions:
-  contents: read
-concurrency:
-  group: hardening-12-licenses-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
   contents: read
 
-concurrency:
   group: hardening-12-licenses-${{ github.ref }}
   cancel-in-progress: true
 
@@ -27,10 +19,8 @@ jobs:
           
       - uses: pnpm/action-setup@v4
         with:
-          run_install: false
           package_json_path: package.json
           version: 10.14.0
-          run_install: false
       - run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Generate licenses.json
