@@ -27,6 +27,13 @@ jobs:
           cache: 'pnpm'
 
       - name: Enable Corepack & activate pnpm (from packageManager)
+      - name: Cache pnpm store (optional)
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles("pnpm-lock.yaml") }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
         shell: bash
         run: |
           set -euo pipefail
