@@ -5,6 +5,13 @@ on:
     branches: [hardening/12-licenses]
   pull_request:
     branches: [hardening/12-licenses]
+=======
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hardening-12-licenses-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -31,6 +38,15 @@ jobs:
           echo "Using pnpm ${VER}"
           corepack prepare pnpm@${VER} --activate
           pnpm -v
+          node-version: '24.x'
+          
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+          package_json_path: package.json
+          version: 10.14.0
+          run_install: false
+      - run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install deps (non-frozen for this workflow)
         run: pnpm install --no-frozen-lockfile
@@ -48,3 +64,5 @@ jobs:
         with:
           name: license-report
           path: license-report.json
+          name: licenses-report
+          path: licenses.json
