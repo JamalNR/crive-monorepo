@@ -1,0 +1,49 @@
+name: Provenance
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+concurrency:
+  group: provenance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  attest:
+    name: Build provenance (SLSA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.14.2'
+          run_install: false
+
+      # Reuse generator SBOM yang sudah ada
+      - name: Generate SBOM (CycloneDX)
+        run: bash scripts/sbom.sh
+        continue-on-error: true
+
+      # Buat SLSA build-provenance attestation untuk SBOM
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: |
+            artifacts/sbom/*.json
+        continue-on-error: true
+
+      # Simpan juga sbom sebagai artifact (opsional)
+      - name: Upload provenance subjects
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: provenance-sbom-${{ github.sha }}
+          path: artifacts/sbom/*.json
+          retention-days: 30
