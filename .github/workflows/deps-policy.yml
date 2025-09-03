@@ -1,0 +1,56 @@
+name: Deps policy
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: deps-policy-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  deps_pr:
+    name: deps_pr
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const labels = (await github.rest.issues.listLabelsOnIssue({ owner, repo, issue_number: pr.number }))
+              .data.map(l => l.name.toLowerCase());
+            const ok = new Set(['deps','dependencies','renovate','security']);
+            const has = labels.some(n => ok.has(n));
+            const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: pr.number, per_page: 100 });
+            const changed = files.map(f => f.filename);
+            const hit = changed.some(f => /(^|\/)(pnpm-lock\.yaml|package\.json)$/.test(f));
+            core.info(`labels: ${labels.join(', ')}`);
+            core.info(`changed: ${changed.length}`);
+            if (hit && !has) {
+              core.setFailed('Dependency/lockfile changes require label: deps|dependencies|renovate|security');
+            }
+
+  deps_push_main:
+    name: deps_push_main
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const base = context.payload.before;
+            const head = context.sha;
+            if (!base || base === '0000000000000000000000000000000000000000') {
+              core.info('No base SHA (first push) — skipping.');
+              return;
+            }
+            const res = await github.rest.repos.compareCommits({ owner, repo, base, head, per_page: 100 });
+            const files = (res.data.files || []).map(f => f.filename);
+            const hit = files.some(f => /(^|\/)(pnpm-lock\.yaml|package\.json)$/.test(f));
+            if (hit) core.setFailed('Forbidden: changing lockfile/manifest on direct push to main');
