@@ -292,12 +292,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: OSV scan (non-gating)
+      - name: OSV scan via Docker (non-gating)
+
+        shell: bash
+
         run: |
+
+          set -euo pipefail
+
           mkdir -p artifacts/security
-          curl -sSfL https://raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh | sh -s -- -b ./.bin
-          ./.bin/osv-scanner -r . --skip-dir node_modules --format json -o artifacts/security/osv.json
-        continue-on-error: true
+
+          docker run --rm -v "":/work -w /work ghcr.io/google/osv-scanner:latest 
+
+            -r . --skip-dir node_modules --format json -o artifacts/security/osv.json || true
 
       - name: Trivy FS scan (non-gating)
         uses: aquasecurity/trivy-action@0.20.0
