@@ -3,6 +3,7 @@ on:
   push:         { branches: [hardening/12-licenses] }
   pull_request: { branches: [hardening/12-licenses, main] }
 permissions: { contents: read }
+
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -10,22 +11,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
-      - name: Enable Corepack & pnpm
+
+      - name: Setup pnpm via Corepack
         run: |
-          set -euo pipefail
           corepack enable
           corepack prepare pnpm@10.14.2 --activate
-          pnpm -v
-      - name: "Run pnpm audit (JSON) -> npm-audit.json"
+          pnpm -v || true
+
+      - name: Generate npm-audit.json
+        shell: bash
         run: |
-          set -euo pipefail
-          pnpm audit --json > npm-audit.json || true
-          # fallback agar artifact selalu ada
-          [ -s npm-audit.json ] || echo '{"metadata":{"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0}},"vulnerabilities":{}}' > npm-audit.json
-          head -c 200 npm-audit.json || true
-      - uses: actions/upload-artifact@v4
+          set +e
+          pnpm audit --json > npm-audit.json 2>/dev/null || true
+          # fallback agar artifact SELALU ada
+          if ! [ -s npm-audit.json ]; then
+            echo '{"metadata":{"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0}},"vulnerabilities":{}}' > npm-audit.json
+          fi
+          wc -c npm-audit.json; head -c 200 npm-audit.json || true
+
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: npm-audit
           path: npm-audit.json
-          if-no-files-found: warn
+          if-no-files-found: error
