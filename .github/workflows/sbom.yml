@@ -11,23 +11,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node 24.x
         uses: actions/setup-node@v4
         with:
           node-version: '24.x'
 
-      - name: Setup pnpm 10.14.0
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
-          run_install: false
+      - name: Enable Corepack & activate pnpm (from package.json)
+        run: |
+          corepack enable
+          corepack use pnpm@10.14.0
+          pnpm -v
 
       - name: Install (frozen, ignore scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Generate CycloneDX SBOM (JSON)
         run: |
-          npx --yes @cyclonedx/cyclonedx-npm@4.1.0 \
+          pnpm dlx @cyclonedx/cyclonedx-npm@4.1.0 \
             --output-format json \
             --output-path ./sbom-cyclonedx.json
 
