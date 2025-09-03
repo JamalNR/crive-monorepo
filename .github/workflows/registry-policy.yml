@@ -1,0 +1,32 @@
+name: Registry policy
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: registry-policy-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Run registry pin + integrity verification
+        run: bash scripts/verify-registry.sh
+
+      - name: Upload violations (if any)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registry-violations-${{ github.sha }}
+          path: artifacts/security/registry-violations.txt
+          retention-days: 14
