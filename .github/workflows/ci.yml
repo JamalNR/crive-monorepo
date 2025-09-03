@@ -349,7 +349,9 @@ jobs:
             }
 
       # Larang push langsung ke main yang mengubah lockfile/manifest
+
       - name: Forbid dependency changes on direct push to main
+        if: false
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           PREV=$(git rev-list --max-count=1 "${GITHUB_SHA}^")
@@ -357,3 +359,20 @@ jobs:
             echo "Forbidden: changing lockfile/manifest on direct push to main"; exit 1;
           fi
           echo "OK: no forbidden dependency changes on push."
+      - name: Forbid dependency changes on direct push to main (API compare)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/github-script
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const base = context.payload.before;
+            const head = context.sha;
+            if (!base || base === "0000000000000000000000000000000000000000") {
+              core.info("No base SHA (first push?) — skipping.");
+              return;
+            }
+            const res = await github.rest.repos.compareCommits({ owner, repo, base, head, per_page: 100 });
+            const files = (res.data.files || []).map(f => f.filename);
+            core.info(`Changed files: `);
+            const hit = files.some(f => /(^|/)(pnpm-lock.yaml|package.json).test(f));
+            if (hit) core.setFailed("Forbidden: changing lockfile/manifest on direct push to main");
