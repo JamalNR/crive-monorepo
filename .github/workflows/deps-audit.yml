@@ -3,6 +3,12 @@ name: hardening/12: deps-audit gate
 on:
   push: { branches: [hardening/12-licenses] }
   pull_request: { branches: [hardening/12-licenses] }
+permissions: { contents: read }
+concurrency: { group: deps-audit-${{ github.ref }}, cancel-in-progress: true }
+
+on:
+  push: { branches: [hardening/12-licenses] }
+  pull_request: { branches: [hardening/12-licenses] }
 
 permissions: { contents: read }
 
@@ -29,6 +35,9 @@ jobs:
       - name: Install deps (frozen, no scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Install deps (frozen, no scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: npm audit (JSON, prod only)
         run: |
           set -euo pipefail
@@ -41,6 +50,10 @@ jobs:
           H=$(jq -r '.metadata.vulnerabilities.high // 0' npm-audit.json)
           C=$(jq -r '.metadata.vulnerabilities.critical // 0' npm-audit.json)
           echo "High=$H  Critical=$C"
+          test "$H" -eq 0 -a "$C" -eq 0 || { echo "::error::Vulnerability policy violated"; exit 1; }
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
+        with: { name: npm-audit, path: npm-audit.json }
           if [ "$H" -gt 0 ] || [ "$C" -gt 0 ]; then
             echo "::error::Vulnerability policy violated (high/critical found)."
             exit 1

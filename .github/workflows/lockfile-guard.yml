@@ -3,6 +3,12 @@ name: hardening/12: lockfile-guard
 on:
   pull_request:
     branches: [hardening/12-licenses]
+permissions: { contents: read, pull-requests: read }
+concurrency: { group: lockfile-${{ github.ref }}, cancel-in-progress: true }
+
+on:
+  pull_request:
+    branches: [hardening/12-licenses]
 
 permissions: { contents: read }
 
@@ -12,6 +18,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      - name: Validate lockfile changes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels) }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          CHANGED=$(git diff --name-only "$BASE".."$HEAD" | grep -E '(^|/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$' || true)
+          echo "Changed lockfiles:"
+          echo "${CHANGED:-<none>}"
+          allowed_actor=$(printf '%s' "$ACTOR" | grep -Eiq 'dependabot|renovate' && echo yes || echo no)
+          has_label=$(printf '%s' "$LABELS" | jq -r 'map(.name)|index("deps")|if .==null then "no" else "yes" end')
+          if [ -n "$CHANGED" ] && [ "$allowed_actor" = "no" ] && [ "$has_label" = "no" ]; then
+            echo "::error::Lockfile changed but PR lacks label 'deps' (or actor not dependabot/renovate)."
+            exit 1
+          fi
+          echo "OK"
 
       - name: Fail if lockfile changed without allowed labels
         env:

@@ -1,5 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits"],
+  "labels": ["deps"],
+  "rangeStrategy": "bump",
+  "prHourlyLimit": 5,
+  "packageRules": [
+    { "matchManagers": ["npm"], "groupName": "npm minor/patch" }
+  ]
   "extends": ["config:recommended"],
   "rangeStrategy": "bump",
   "automerge": false,
