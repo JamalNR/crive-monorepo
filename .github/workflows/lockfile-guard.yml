@@ -1,0 +1,23 @@
+name: lockfile-guard
+on: { pull_request: {} }
+permissions: { contents: read }
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Enforce pnpm-lock.yaml discipline
+        run: |
+          set -euo pipefail
+          BASE="${{ github.event.pull_request.base.sha }}"
+          CHANGED=$(git diff --name-only "$BASE"...HEAD)
+          if echo "$CHANGED" | grep -qE '(^|/)package\.json$'; then
+            if ! echo "$CHANGED" | grep -q '^pnpm-lock\.yaml$'; then
+              echo "::error::package.json berubah tapi pnpm-lock.yaml tidak diupdate"; exit 1
+            fi
+          fi
+          if echo "$CHANGED" | grep -q '^pnpm-lock\.yaml$' && \
+             ! echo "$CHANGED" | grep -qE '(^|/)package\.json$|^pnpm-workspace\.yaml$'; then
+            echo "::warning::pnpm-lock.yaml berubah tanpa manifest; pastikan via PR deps"
+          fi

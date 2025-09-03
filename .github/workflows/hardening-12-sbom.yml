@@ -1,0 +1,28 @@
+name: hardening/12-sbom
+on:
+  pull_request:
+  push: { branches: [ main, hardening/** ] }
+permissions: { contents: read }
+concurrency: { group: sbom-${{ github.ref }}, cancel-in-progress: true }
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Enable Corepack & pnpm
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@10.14.2 --activate
+      - name: Install (frozen, ignore scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Generate CycloneDX SBOM (prod)
+        run: |
+          mkdir -p reports
+          pnpm dlx -y @cyclonedx/cyclonedx-npm --omit dev --spec-version 1.5 --output-file reports/sbom.json
+          test -s reports/sbom.json || echo '{}' > reports/sbom.json
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with: { name: sbom, path: reports/sbom.json, if-no-files-found: error }

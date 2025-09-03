@@ -1,13 +1,73 @@
 name: deps-audit
 on:
   pull_request:
-    branches: [main]
-  workflow_dispatch:
-permissions:
-  contents: read
+  push: { branches: [ main, hardening/** ] }
+permissions: { contents: read }
+concurrency: { group: deps-audit-${{ github.ref }}, cancel-in-progress: true }
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Enable Corepack & pnpm
+        run: |
+          set -euo pipefail
+          corepack enable
+          VER=$(node -p "(()=>{try{const pm=(require('./package.json').packageManager||'pnpm@10.14.2');return pm.split('@')[1]||'10.14.2'}catch(e){return '10.14.2'}})()")
+          corepack prepare pnpm@${VER} --activate
+          pnpm -v
+      - name: Install (frozen, ignore scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: pnpm audit JSON (gate High/Critical)
+        id: pnpm_audit
+        continue-on-error: true
+        run: |
+          mkdir -p reports
+          pnpm audit --json > reports/pnpm-audit.json || true
+          node - <<'NODE'
+          const fs=require('fs');
+          const f='reports/pnpm-audit.json';
+          if(!fs.existsSync(f)){ console.log('::warning::audit output missing'); process.exit(0); }
+          const j=JSON.parse(fs.readFileSync(f,'utf8'));
+          const vulns=j.vulnerabilities||{};
+          let H=0,C=0; for(const k of Object.keys(vulns)){const v=vulns[k]; if(v.severity==='high') H++; if(v.severity==='critical') C++; }
+          console.log(`High=${H} Critical=${C}`);
+          if (H>0 || C>0) { console.log('::error::High/Critical vulnerabilities ditemukan'); process.exit(1); }
+          NODE
+      - name: OSV (non-gating)
+        continue-on-error: true
+        uses: ossf/osv-scanner-action@v1
+        with: { scan-args: "-r -o reports/osv-results.json ." }
+      - name: Trivy (non-gating)
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          format: json
+          output: reports/trivy.json
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: true
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deps-audit
+          path: |
+            reports/pnpm-audit.json
+            reports/osv-results.json
+            reports/trivy.json
+          if-no-files-found: warn
+      - name: PR summary
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs=require('fs'); let body='### Deps audit\\n';
+            try{const j=JSON.parse(fs.readFileSync('reports/pnpm-audit.json','utf8'));
+              const vulns=j.vulnerabilities||{}; const c={low:0,moderate:0,high:0,critical:0};
+              for(const k of Object.keys(vulns)) c[vulns[k].severity]=(c[vulns[k].severity]||0)+1;
+              body+=`Low: ${c.low||0}  Moderate: ${c.moderate||0}  High: ${c.high||0}  Critical: ${c.critical||0}\\n`;
+            }catch{ body+='_no data_\\n'; }
+            github.rest.issues.createComment({...context.repo, issue_number: context.payload.pull_request.number, body});

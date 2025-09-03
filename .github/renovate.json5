@@ -1,0 +1,13 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "rangeStrategy": "bump",
+  "automerge": false,
+  "labels": ["deps", "renovate"],
+  "packageRules": [
+    { "matchDepTypes": ["devDependencies"], "groupName": "dev-deps (weekly)", "schedule": ["after 01:00 on monday"] },
+    { "matchUpdateTypes": ["minor", "patch"], "groupName": "minor/patch (daily)" },
+    { "matchUpdateTypes": ["major"], "groupName": "major (manual review)" }
+  ],
+  "npm": { "postUpdateOptions": ["pnpmDedupe"] }
+}
