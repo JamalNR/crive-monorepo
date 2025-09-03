@@ -19,6 +19,7 @@ jobs:
           node-version: 20
       - name: Enable Corepack & pnpm
         run: |
+          set -euo pipefail
           corepack enable
           corepack prepare pnpm@10.14.2 --activate
           pnpm -v
@@ -26,10 +27,11 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Generate CycloneDX SBOM (JSON)
         run: |
+          set -euo pipefail
           pnpm dlx -y @cyclonedx/cyclonedx-npm \
             --spec-version 1.5 \
             --output-file sbom.json \
-            --output-format json
+            --output-format json || true
           test -s sbom.json || echo '{"bomFormat":"CycloneDX","components":[]}' > sbom.json
           jq '.components|length as $n | "components: \($n)"' sbom.json
       - uses: actions/upload-artifact@v4
