@@ -10,23 +10,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '24.x' }
-      - uses: pnpm/action-setup@v4
-        with: { version: 10.14.2, run_install: false }
-      - name: Install deps (frozen)
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+
+      - name: Setup pnpm 10.14.0
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+          run_install: false
+
+      - name: Install (frozen, ignore scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Generate CycloneDX SBOM
+
+      - name: Generate CycloneDX SBOM (JSON)
         run: |
-          npx --yes @cyclonedx/cyclonedx-npm@4.1.0 --output-format json --output-path ./sbom-cyclonedx.json
-          jq '.metadata.tools |= (. + [{ "name": "crive-ci", "vendor": "Vintora/Crive" }])' sbom-cyclonedx.json > sbom.json && mv sbom.json sbom-cyclonedx.json
+          npx --yes @cyclonedx/cyclonedx-npm@4.1.0 \
+            --output-format json \
+            --output-path ./sbom-cyclonedx.json
+
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4
         with:
           name: sbom-cyclonedx
           path: sbom-cyclonedx.json
           retention-days: 14
-      - name: SBOM Summary
+
+      - name: SBOM summary
         run: |
-          echo "### SBOM (CycloneDX) terbuat" >> $GITHUB_STEP_SUMMARY
-          echo "- File: \`sbom-cyclonedx.json\` (lihat di Artifacts)" >> $GITHUB_STEP_SUMMARY
+          echo "### SBOM (CycloneDX)" >> $GITHUB_STEP_SUMMARY
+          echo "- File: \`sbom-cyclonedx.json\` (artifact ter-upload)" >> $GITHUB_STEP_SUMMARY
