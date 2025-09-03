@@ -18,7 +18,7 @@ jobs:
         run: |
           set -euo pipefail
           corepack enable
-          corepack prepare pnpm@10.14.2 --activate
+          corepack prepare pnpm@10.14.0 --activate
           pnpm -v
       - name: Install deps (no frozen, for license tool)
         run: pnpm install --no-frozen-lockfile
