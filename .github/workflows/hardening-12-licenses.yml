@@ -1,9 +1,13 @@
 name: Hardening/12 licenses
+
 on:
-  push: { branches: [hardening/12-licenses] }
-  pull_request: { branches: [hardening/12-licenses] }
+  push:
+    branches: [hardening/12-licenses]
+  pull_request:
+    branches: [hardening/12-licenses]
 
 permissions: { contents: read }
+
 concurrency:
   group: hardening-12-licenses-${{ github.ref }}
   cancel-in-progress: true
@@ -27,24 +31,68 @@ jobs:
           corepack prepare pnpm@${VER} --activate
           pnpm -v
 
-      - name: Install deps (non-frozen)
+      - name: Install deps (non-frozen for this workflow)
         run: pnpm install --no-frozen-lockfile
 
-      - name: Generate license report (always create file)
+      - name: Generate license report (pnpm-aware)
         run: |
           set -euo pipefail
-          mkdir -p reports
-          pnpm dlx -y license-checker-rseidelsohn --summary --production --json \
-            > reports/license-report.json || echo '{}' > reports/license-report.json
-          test -s reports/license-report.json || echo '{}' > reports/license-report.json
-          ls -lh reports/license-report.json
-          head -c 300 reports/license-report.json || true
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const root = path.resolve('node_modules/.pnpm');
+          const seen = new Set();
+          const summary = {};
+          const details = {};
+          function add(lic, name, ver) {
+            const key = `${name}@${ver}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            lic = (lic && (typeof lic === 'string' ? lic : lic.type)) || 'UNKNOWN';
+            lic = String(lic).trim() || 'UNKNOWN';
+            summary[lic] = (summary[lic] || 0) + 1;
+            (details[lic] ||= []).push(key);
+          }
+          if (fs.existsSync(root)) {
+            for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+              if (!entry.isDirectory()) continue;
+              const nm = path.join(root, entry.name, 'node_modules');
+              if (!fs.existsSync(nm)) continue;
+              for (const pkg of fs.readdirSync(nm, { withFileTypes: true })) {
+                if (!pkg.isDirectory()) continue;
+                const pj = path.join(nm, pkg.name, 'package.json');
+                try {
+                  const j = JSON.parse(fs.readFileSync(pj, 'utf8'));
+                  add(j.license, j.name, j.version);
+                } catch {}
+              }
+            }
+          }
+          const out = { generatedAt: new Date().toISOString(), summary, details };
+          fs.writeFileSync('license-report.json', JSON.stringify(out, null, 2));
+          NODE
+          test -s license-report.json
+          jq -r '.summary' license-report.json || true
+
+      - name: Enforce denylist
+        run: |
+          BAD=$(
+            jq -r '
+              [.summary | to_entries[]
+                | select(.key | test("AGPL|GPL|LGPL|SSPL|BUSL"; "i"))
+              ] | length' license-report.json
+          )
+          if [ "$BAD" -gt 0 ]; then
+            echo "::error::Found disallowed licenses"
+            jq -r '.summary | to_entries
+                    | map(select(.key|test("AGPL|GPL|LGPL|SSPL|BUSL";"i")))
+                    | .[] | "\(.key)=\(.value)"' license-report.json
+            exit 1
+          fi
 
       - name: Upload license artifact
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: license-report
-          path: reports/license-report.json
-          if-no-files-found: warn
-          retention-days: 7
+          path: license-report.json
+          if-no-files-found: error
