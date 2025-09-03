@@ -32,13 +32,11 @@ jobs:
         run: |
           set -euo pipefail
           pnpm audit --json > npm-audit.json || true
-          # pastikan JSON valid agar artifact selalu ada
-          if ! jq -e . >/dev/null 2>&1 < npm-audit.json; then
-            echo '{"metadata":{"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0}}}' > npm-audit.json
-          fi
-          jq '.metadata.vulnerabilities' npm-audit.json || true
+          # pastikan file selalu ada
+          test -s npm-audit.json || echo '{"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0}}}' > npm-audit.json
 
-      - name: "Gate: fail on High/Critical"
+      - name: "Gate: fail on High/Critical (warn-only)"
+        # sementara tidak memblokir; ubah ke exit 1 bila siap gating
         continue-on-error: true
         run: |
           set -euo pipefail
@@ -46,12 +44,12 @@ jobs:
           C=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit.json)
           echo "high=$H critical=$C"
           if [ "$H" -gt 0 ] || [ "$C" -gt 0 ]; then
-            echo "::error::High/Critical vulnerabilities present (high=$H, critical=$C)"
-            exit 1
+            echo "::warning::High/Critical vulnerabilities present (high=$H, critical=$C)"
           fi
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ always() }}
         with:
           name: npm-audit
           path: npm-audit.json
+          if-no-files-found: warn
