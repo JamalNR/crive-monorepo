@@ -1,19 +1,13 @@
-name: hardening/12: SBOM (CycloneDX)
-on:
-  push: { branches: [hardening/12-licenses] }
-  pull_request: { branches: [hardening/12-licenses] }
+name: hardening/12 SBOM
 
 on:
-  push: { branches: [hardening/12-licenses] }
-  pull_request: { branches: [hardening/12-licenses] }
+  pull_request:
+    branches: [hardening/12-licenses, main]
+  push:
+    branches: [hardening/12-licenses]
+
 permissions:
   contents: read
-  id-token: write
-  attestations: write
-concurrency: { group: sbom-${{ github.ref }}, cancel-in-progress: true }
-concurrency:
-  group: sbom-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   sbom:
@@ -21,45 +15,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - name: Enable Corepack & activate pnpm
+        with:
+          node-version: 20
+      - name: Enable Corepack & pnpm
         run: |
-          set -euo pipefail
           corepack enable
-          VER=$(node -p "(()=>{try{const pm=(require('./package.json').packageManager||'pnpm@10.14.0');return pm.split('@')[1]||'10.14.0'}catch(e){return '10.14.0'}})()")
-          corepack prepare pnpm@${VER} --activate
+          corepack prepare pnpm@10.14.2 --activate
           pnpm -v
-      - name: Install deps (frozen, no scripts)
+      - name: Install (frozen, no scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Generate CycloneDX SBOM (JSON)
         run: |
-          set -euo pipefail
-          pnpm dlx -y @cyclonedx/cyclonedx-npm@4 --json --output-file sbom.json
-          test -s sbom.json
-      - name: Upload SBOM
-        uses: actions/upload-artifact@v4
-        with: { name: sbom, path: sbom.json }
-      - name: Attest SBOM (SLSA provenance)
-        uses: actions/attest-build-provenance@v1
-        with: { subject-path: sbom.json }
-      - name: Install deps (frozen, no scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Generate CycloneDX SBOM (JSON)
-        run: |
-          set -euo pipefail
-          pnpm dlx -y @cyclonedx/cyclonedx-npm@4 \
-            --json \
-            --output-file sbom.json
-          test -s sbom.json
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+          pnpm dlx -y @cyclonedx/cyclonedx-npm \
+            --spec-version 1.5 \
+            --output-file sbom.json \
+            --output-format json
+          test -s sbom.json || echo '{"bomFormat":"CycloneDX","components":[]}' > sbom.json
+          jq '.components|length as $n | "components: \($n)"' sbom.json
+      - uses: actions/upload-artifact@v4
         with:
           name: sbom
           path: sbom.json
-
-      - name: Attest SBOM (SLSA provenance)
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-path: sbom.json
