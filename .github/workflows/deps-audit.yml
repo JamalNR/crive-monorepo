@@ -32,13 +32,11 @@ jobs:
         run: |
           set -euo pipefail
           pnpm audit --json > npm-audit.json || true
-          # pastikan file selalu ada agar artifact tidak gagal
           test -s npm-audit.json || echo '{"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0}}}' > npm-audit.json
 
-      - name: Gate High/Critical (warn-only)
+      - name: "Gate: High/Critical (warn-only)"
         continue-on-error: true
         run: |
-          set -euo pipefail
           H=$(jq '.metadata.vulnerabilities.high // 0' npm-audit.json)
           C=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit.json)
           echo "high=$H critical=$C"
