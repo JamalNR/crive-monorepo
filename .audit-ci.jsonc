@@ -1,0 +1,10 @@
+{
+  // Fail HANYA untuk tingkat "high" & "critical".
+  // Tambahkan pengecualian sementara (jika benar-benar perlu) di sini.
+  "allowlist": [
+    // "GHSA-xxxx-xxxx-xxxx",
+    // "CVE-2025-xxxxx",
+    // "minimist>0.0.8"
+  ],
+  "report-type": "summary"
+}
