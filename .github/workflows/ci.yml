@@ -292,19 +292,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: OSV scan via Docker (non-gating)
+      - name: OSV scan via Docker (stable)
 
         shell: bash
 
+        continue-on-error: true
+
         run: |
 
-          set -euo pipefail
+          set -Eeuo pipefail
 
           mkdir -p artifacts/security
 
-          docker run --rm -v "":/work -w /work ghcr.io/google/osv-scanner:latest 
+          LOG=artifacts/security/osv-docker.log
 
-            -r . --skip-dir node_modules --format json -o artifacts/security/osv.json || true
+          # coba dengan sudo bila diperlukan
+
+          if sudo -n docker --version >/dev/null 2>&1; then DOCKER="sudo docker"; else DOCKER="docker"; fi
+
+          # jalankan scan; jika gagal, tulis report JSON agar tidak kosong
+
+          if !  run --rm -v "":/work -w /work ghcr.io/google/osv-scanner:latest 
+
+               -r . --skip-dir node_modules --format json -o artifacts/security/osv.json ; then
+
+            rc=0; echo "OSV docker failed with code " | tee -a ""
+
+            echo "{"tool":"osv-scanner","status":"error","exitCode":}" > artifacts/security/osv.json
+
+          fi
 
       - name: Trivy FS scan (non-gating)
         uses: aquasecurity/trivy-action@0.20.0
