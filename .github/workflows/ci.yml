@@ -284,3 +284,44 @@ jobs:
       - run: |
           echo "needs.build.result=${{ needs.build.result }}"
           test "${{ needs.build.result }}" = "success"
+  security_xcheck:
+    name: Security cross-check
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.14.2'
+          run_install: false
+
+      - name: OSV scan (non-gating)
+        run: |
+          mkdir -p artifacts/security
+          curl -sSfL https://raw.githubusercontent.com/google/osv-scanner/main/scripts/install.sh | sh -s -- -b ./.bin
+          ./.bin/osv-scanner -r . --skip-dir node_modules --format json -o artifacts/security/osv.json
+        continue-on-error: true
+
+      - name: Trivy FS scan (non-gating)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          format: json
+          output: artifacts/security/trivy-fs.json
+        continue-on-error: true
+
+      - name: Upload security artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-crosscheck-${{ github.sha }}
+          path: |
+            artifacts/security/*.json
+          retention-days: 30
