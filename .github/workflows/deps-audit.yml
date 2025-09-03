@@ -27,7 +27,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Run pnpm audit (JSON)
         run: pnpm audit --json > npm-audit.json || true
-      - name: Gate: fail on High/Critical
+      - name: 'Gate: fail on High/Critical'
         run: |
           set -euo pipefail
           H=$(jq '.metadata.vulnerabilities.high // 0' npm-audit.json)
