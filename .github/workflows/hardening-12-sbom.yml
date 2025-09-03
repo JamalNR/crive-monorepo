@@ -1,17 +1,20 @@
-name: hardening/12: deps-audit gate
+name: hardening/12: SBOM (CycloneDX)
 
 on:
   push: { branches: [hardening/12-licenses] }
   pull_request: { branches: [hardening/12-licenses] }
 
-permissions: { contents: read }
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
 
 concurrency:
-  group: deps-audit-${{ github.ref }}
+  group: sbom-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  audit:
+  sbom:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,25 +32,21 @@ jobs:
       - name: Install deps (frozen, no scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: npm audit (JSON, prod only)
+      - name: Generate CycloneDX SBOM (JSON)
         run: |
           set -euo pipefail
-          npm audit --omit=dev --json > npm-audit.json || true
-          test -s npm-audit.json
+          pnpm dlx -y @cyclonedx/cyclonedx-npm@4 \
+            --json \
+            --output-file sbom.json
+          test -s sbom.json
 
-      - name: Enforce policy (fail on high/critical)
-        run: |
-          set -euo pipefail
-          H=$(jq -r '.metadata.vulnerabilities.high // 0' npm-audit.json)
-          C=$(jq -r '.metadata.vulnerabilities.critical // 0' npm-audit.json)
-          echo "High=$H  Critical=$C"
-          if [ "$H" -gt 0 ] || [ "$C" -gt 0 ]; then
-            echo "::error::Vulnerability policy violated (high/critical found)."
-            exit 1
-          fi
-
-      - name: Upload audit artifact
+      - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:
-          name: npm-audit
-          path: npm-audit.json
+          name: sbom
+          path: sbom.json
+
+      - name: Attest SBOM (SLSA provenance)
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: sbom.json
