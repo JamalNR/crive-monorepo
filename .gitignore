@@ -1,63 +1,13 @@
-# ===== Node & Package Managers =====
+# Node & pnpm
 node_modules/
-# NOTE: lockfiles (pnpm-lock.yaml / package-lock.json / yarn.lock) TETAP DI-COMMIT
-# -> sengaja tidak di-ignore agar CI "frozen lockfile" tetap aman
+pnpm-lock.yaml
 
-# ===== Build Outputs =====
+# Build output
 dist/
 build/
 .out/
 .next/
-coverage/
-*.tsbuildinfo
-.eslintcache
 
-# ===== Logs =====
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
-
-# ===== OS / Editor =====
-.DS_Store
-*.swp
-*.swo
-.idea/
-.vscode/
-
-# ===== ENV (global): never commit secrets =====
-# ignore any .env or .env.* in any folder
-**/.env
-**/.env.*
-
-# but keep example templates
-!**/.env.example
-
-# Next.js local overrides
-.env.local
-.env.development
-.env.production
-
-# Deploy/runtime artifacts
-deploy/*.env
-docker/*.env
-.k8s/**/*.env
-
-# ===== Misc =====
-tmp/
-temp/
-
-# Doppler local secrets
-doppler.env
-doppler.json
-backups/
-.github/workflows/*.bak
-.github/workflows/_backup/
-.github/workflows/*.bak.*
-
-# local artifacts
-artifacts/
-
-# local artifacts
-artifacts/
+# Env
+.env
+.env.*
