@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: Enable Corepack & pnpm
+      - name: Enable Corepack and pnpm
         run: |
           set -euo pipefail
           corepack enable
@@ -32,11 +32,10 @@ jobs:
         run: |
           set -euo pipefail
           pnpm audit --json > npm-audit.json || true
-          # pastikan file selalu ada
+          # pastikan file selalu ada agar artifact tidak gagal
           test -s npm-audit.json || echo '{"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0}}}' > npm-audit.json
 
-      - name: "Gate: fail on High/Critical (warn-only)"
-        # sementara tidak memblokir; ubah ke exit 1 bila siap gating
+      - name: Gate High/Critical (warn-only)
         continue-on-error: true
         run: |
           set -euo pipefail
