@@ -1,14 +1,11 @@
 name: Hardening/12 licenses
-
 on:
   push:
     branches: [hardening/12-licenses]
   pull_request:
     branches: [hardening/12-licenses, main]
-
 permissions:
   contents: read
-
 jobs:
   licenses:
     runs-on: ubuntu-latest
@@ -17,13 +14,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Enable Corepack & activate pnpm (from packageManager)
+      - name: Enable Corepack & activate pnpm
         run: |
           set -euo pipefail
           corepack enable
           corepack prepare pnpm@10.14.2 --activate
           pnpm -v
-      - name: Install deps (non-frozen untuk tool lisensi)
+      - name: Install deps (no frozen, for license tool)
         run: pnpm install --no-frozen-lockfile
       - name: Generate license report
         run: |
@@ -32,7 +29,6 @@ jobs:
           test -s license-report.json || echo '{"summary":{}}' > license-report.json
       - name: Upload license artifact
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: license-report
           path: license-report.json
