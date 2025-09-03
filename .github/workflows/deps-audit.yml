@@ -1,0 +1,59 @@
+name: deps-audit
+on:
+  pull_request:
+  push:
+    branches: [main, hardening/**, feat/**]
+permissions:
+  contents: read
+  security-events: write
+jobs:
+  osv:
+    name: OSV Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24.x' }
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.14.2, run_install: false }
+      - name: Install deps (read-only)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Run OSV scanner
+        uses: google/osv-scanner-action@v1
+        with:
+          workspace: .
+          args: >-
+            --lockfile=pnpm-lock.yaml
+            --format sarif
+            --output osv.sarif
+      - name: Upload OSV results (SARIF)
+        uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: osv.sarif }
+
+      - name: Fail on HIGH/CRITICAL
+        run: |
+          jq -r '[.runs[].results[]?|.ruleId] | length' osv.sarif >/dev/null 2>&1 || echo "{}" >/dev/null
+          # Simple severity gate via summary JSON (best-effort using findings text)
+          HIGH=$(jq -r '..|.level? | select(.!=null)' osv.sarif | grep -iE 'error|high|critical' | wc -l || true)
+          if [ "${HIGH:-0}" -gt 0 ]; then
+            echo "Found HIGH/CRITICAL vulnerabilities via OSV."
+            exit 1
+          fi
+  trivy:
+    name: Trivy FS (node modules)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          ignore-unfixed: true
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: trivy.sarif }

@@ -1,0 +1,23 @@
+/**
+ * Harden install: block risky lifecycle scripts unless explicitly allowed.
+ * Adjust allowList per kebutuhan (default kosong = blok semua).
+ */
+const allowList = new Set([
+  // contoh: 'esbuild', 'sharp'
+]);
+
+function readPackage(pkg) {
+  if (pkg.scripts) {
+    for (const k of Object.keys(pkg.scripts)) {
+      if (/(preinstall|install|postinstall)/.test(k)) {
+        const name = pkg.name || '(unknown)';
+        if (!allowList.has(name)) {
+          pkg.scripts[k] = 'echo "[skip] lifecycle ' + k + ' for ' + name + '"';
+        }
+      }
+    }
+  }
+  return pkg;
+}
+
+module.exports = { readPackage };
