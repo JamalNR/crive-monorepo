@@ -1,10 +1,10 @@
 name: hardening/12 deps-audit
 
 on:
-  pull_request:
-    branches: [hardening/12-licenses, main]
   push:
     branches: [hardening/12-licenses]
+  pull_request:
+    branches: [hardening/12-licenses, main]
 
 permissions:
   contents: read
@@ -18,7 +18,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: Enable Corepack and pnpm
+      - name: Enable Corepack & pnpm
         run: |
           set -euo pipefail
           corepack enable
@@ -28,24 +28,25 @@ jobs:
       - name: Install (frozen, no scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Run pnpm audit (JSON)
+      - name: "Run pnpm audit (JSON) -> npm-audit.json"
         run: |
           set -euo pipefail
           pnpm audit --json > npm-audit.json || true
-          test -s npm-audit.json || echo '{"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0}}}' > npm-audit.json
+          # Pastikan file ada walau pnpm tidak output
+          if [ ! -s npm-audit.json ]; then
+            echo '{"metadata":{"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0}},"vulnerabilities":{}}' > npm-audit.json
+          fi
+          head -c 200 npm-audit.json || true
 
-      - name: "Gate: High/Critical (warn-only)"
-        continue-on-error: true
+      - name: "Warn-only: tampilkan jumlah"
         run: |
+          set -euo pipefail
           H=$(jq '.metadata.vulnerabilities.high // 0' npm-audit.json)
           C=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit.json)
-          echo "high=$H critical=$C"
-          if [ "$H" -gt 0 ] || [ "$C" -gt 0 ]; then
-            echo "::warning::High/Critical vulnerabilities present (high=$H, critical=$C)"
-          fi
+          echo "::warning::pnpm audit -> high=$H critical=$C (warn-only)"
 
       - uses: actions/upload-artifact@v4
-        if: ${{ always() }}
+        if: always()
         with:
           name: npm-audit
           path: npm-audit.json
