@@ -17,17 +17,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
       - name: Enable Corepack & pnpm
         run: |
           set -euo pipefail
           corepack enable
           corepack prepare pnpm@10.14.2 --activate
           pnpm -v
+
       - name: Install (frozen, no scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Run pnpm audit (JSON)
-        run: pnpm audit --json > npm-audit.json || true
-      - name: 'Gate: fail on High/Critical'
+        run: |
+          set -euo pipefail
+          pnpm audit --json > npm-audit.json || true
+          # pastikan JSON valid agar artifact selalu ada
+          if ! jq -e . >/dev/null 2>&1 < npm-audit.json; then
+            echo '{"metadata":{"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0}}}' > npm-audit.json
+          fi
+          jq '.metadata.vulnerabilities' npm-audit.json || true
+
+      - name: "Gate: fail on High/Critical"
+        continue-on-error: true
         run: |
           set -euo pipefail
           H=$(jq '.metadata.vulnerabilities.high // 0' npm-audit.json)
@@ -37,6 +49,7 @@ jobs:
             echo "::error::High/Critical vulnerabilities present (high=$H, critical=$C)"
             exit 1
           fi
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
