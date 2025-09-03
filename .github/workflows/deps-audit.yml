@@ -1,50 +1,28 @@
 name: hardening/12 deps-audit
-
 on:
-  push:
-    branches: [hardening/12-licenses]
-  pull_request:
-    branches: [hardening/12-licenses, main]
-
-permissions:
-  contents: read
-
+  push:         { branches: [hardening/12-licenses] }
+  pull_request: { branches: [hardening/12-licenses, main] }
+permissions: { contents: read }
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
+        with: { node-version: 20 }
       - name: Enable Corepack & pnpm
         run: |
           set -euo pipefail
           corepack enable
           corepack prepare pnpm@10.14.2 --activate
           pnpm -v
-
-      - name: Install (frozen, no scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
       - name: "Run pnpm audit (JSON) -> npm-audit.json"
         run: |
           set -euo pipefail
           pnpm audit --json > npm-audit.json || true
-          # Pastikan file ada walau pnpm tidak output
-          if [ ! -s npm-audit.json ]; then
-            echo '{"metadata":{"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0}},"vulnerabilities":{}}' > npm-audit.json
-          fi
+          # fallback agar artifact selalu ada
+          [ -s npm-audit.json ] || echo '{"metadata":{"vulnerabilities":{"info":0,"low":0,"moderate":0,"high":0,"critical":0}},"vulnerabilities":{}}' > npm-audit.json
           head -c 200 npm-audit.json || true
-
-      - name: "Warn-only: tampilkan jumlah"
-        run: |
-          set -euo pipefail
-          H=$(jq '.metadata.vulnerabilities.high // 0' npm-audit.json)
-          C=$(jq '.metadata.vulnerabilities.critical // 0' npm-audit.json)
-          echo "::warning::pnpm audit -> high=$H critical=$C (warn-only)"
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
