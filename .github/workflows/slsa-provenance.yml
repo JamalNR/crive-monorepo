@@ -3,12 +3,20 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+
+# Penting: izin LEVEL WORKFLOW (superset)
 permissions:
-  id-token: write
-  contents: write
+  actions: read        # diperlukan reusable workflow untuk membaca run/artifact
+  id-token: write      # untuk penandatanganan (OIDC)
+  contents: write      # untuk mengunggah provenance ke repo (release/artefak)
+
 jobs:
   provenance:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    secrets: inherit
     with:
+      # subjek: id run yang memicu (sesuai pola generator generic)
       base64-subjects: "${{ github.event.workflow_run.id }}"
+      # opsional: nama file provenance (biar konsisten)
+      provenance-name: "provenance.intoto.jsonl"
