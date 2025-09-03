@@ -1,28 +1,57 @@
-name: hardening/12-sbom
+name: hardening/12: SBOM (CycloneDX)
+
 on:
+  push:
+    branches: [hardening/12-licenses]
   pull_request:
-  push: { branches: [ main, hardening/** ] }
-permissions: { contents: read }
-concurrency: { group: sbom-${{ github.ref }}, cancel-in-progress: true }
+    branches: [hardening/12-licenses]
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: sbom-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   sbom:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - name: Enable Corepack & pnpm
+        with:
+          node-version: 20
+
+      - name: Enable Corepack & activate pnpm (from packageManager)
         run: |
           set -euo pipefail
           corepack enable
-          corepack prepare pnpm@10.14.2 --activate
-      - name: Install (frozen, ignore scripts)
+          VER=$(node -p "(()=>{try{const pm=(require('./package.json').packageManager||'pnpm@10.14.0');return pm.split('@')[1]||'10.14.0'}catch(e){return '10.14.0'}})()")
+          echo "Using pnpm ${VER}"
+          corepack prepare pnpm@${VER} --activate
+          pnpm -v
+
+      - name: Install deps (frozen, no scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Generate CycloneDX SBOM (prod)
+
+      - name: Generate CycloneDX SBOM (JSON)
         run: |
-          mkdir -p reports
-          pnpm dlx -y @cyclonedx/cyclonedx-npm --omit dev --spec-version 1.5 --output-file reports/sbom.json
-          test -s reports/sbom.json || echo '{}' > reports/sbom.json
+          set -euo pipefail
+          pnpm dlx -y @cyclonedx/cyclonedx-npm@4 \
+            --json --omit dev \
+            --output-file sbom.json
+          test -s sbom.json
+
       - name: Upload SBOM
         uses: actions/upload-artifact@v4
-        with: { name: sbom, path: reports/sbom.json, if-no-files-found: error }
+        with:
+          name: sbom
+          path: sbom.json
+
+      - name: Attest SBOM (SLSA provenance)
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: sbom.json

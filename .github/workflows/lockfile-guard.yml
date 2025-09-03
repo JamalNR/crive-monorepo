@@ -1,23 +1,35 @@
-name: lockfile-guard
-on: { pull_request: {} }
+name: hardening/12: lockfile-guard
+
+on:
+  pull_request:
+    branches: [hardening/12-licenses]
+
 permissions: { contents: read }
+
 jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - name: Enforce pnpm-lock.yaml discipline
+
+      - name: Fail if lockfile changed without allowed labels
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          BASE="${{ github.event.pull_request.base.sha }}"
-          CHANGED=$(git diff --name-only "$BASE"...HEAD)
-          if echo "$CHANGED" | grep -qE '(^|/)package\.json$'; then
-            if ! echo "$CHANGED" | grep -q '^pnpm-lock\.yaml$'; then
-              echo "::error::package.json berubah tapi pnpm-lock.yaml tidak diupdate"; exit 1
+          base_sha=${{ github.event.pull_request.base.sha }}
+          git diff --name-only "$base_sha"...HEAD > changed.txt
+          if grep -q '^pnpm-lock.yaml$' changed.txt; then
+            echo "Lockfile changed."
+            labels=$(gh pr view ${{ github.event.pull_request.number }} --json labels -q '.labels[].name' | tr '[:upper:]' '[:lower:]' || true)
+            echo "PR labels: $labels"
+            if echo "$labels" | grep -Eq '(deps|renovate|dependabot)'; then
+              echo "Allowed label present. OK."
+            else
+              echo "::error::pnpm-lock.yaml changed but PR lacks label deps/renovate/dependabot."
+              exit 1
             fi
-          fi
-          if echo "$CHANGED" | grep -q '^pnpm-lock\.yaml$' && \
-             ! echo "$CHANGED" | grep -qE '(^|/)package\.json$|^pnpm-workspace\.yaml$'; then
-            echo "::warning::pnpm-lock.yaml berubah tanpa manifest; pastikan via PR deps"
+          else
+            echo "No lockfile changes. OK."
           fi

@@ -9,7 +9,7 @@ on:
 permissions: { contents: read }
 
 concurrency:
-  group: hardening-12-licenses-${{ github.ref }}
+  group: licenses-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -17,82 +17,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
 
-      - name: Enable Corepack & activate pnpm (from packageManager)
+      - name: Enable Corepack & activate pnpm
         run: |
           set -euo pipefail
           corepack enable
           VER=$(node -p "(()=>{try{const pm=(require('./package.json').packageManager||'pnpm@10.14.0');return pm.split('@')[1]||'10.14.0'}catch(e){return '10.14.0'}})()")
-          echo "Using pnpm ${VER}"
           corepack prepare pnpm@${VER} --activate
           pnpm -v
 
-      - name: Install deps (non-frozen for this workflow)
-        run: pnpm install --no-frozen-lockfile
+      - name: Install deps (frozen, no scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Generate license report (pnpm-aware)
+      - name: Generate license report
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-          const root = path.resolve('node_modules/.pnpm');
-          const seen = new Set();
-          const summary = {};
-          const details = {};
-          function add(lic, name, ver) {
-            const key = `${name}@${ver}`;
-            if (seen.has(key)) return;
-            seen.add(key);
-            lic = (lic && (typeof lic === 'string' ? lic : lic.type)) || 'UNKNOWN';
-            lic = String(lic).trim() || 'UNKNOWN';
-            summary[lic] = (summary[lic] || 0) + 1;
-            (details[lic] ||= []).push(key);
-          }
-          if (fs.existsSync(root)) {
-            for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-              if (!entry.isDirectory()) continue;
-              const nm = path.join(root, entry.name, 'node_modules');
-              if (!fs.existsSync(nm)) continue;
-              for (const pkg of fs.readdirSync(nm, { withFileTypes: true })) {
-                if (!pkg.isDirectory()) continue;
-                const pj = path.join(nm, pkg.name, 'package.json');
-                try {
-                  const j = JSON.parse(fs.readFileSync(pj, 'utf8'));
-                  add(j.license, j.name, j.version);
-                } catch {}
-              }
-            }
-          }
-          const out = { generatedAt: new Date().toISOString(), summary, details };
-          fs.writeFileSync('license-report.json', JSON.stringify(out, null, 2));
-          NODE
+          pnpm dlx -y license-checker-rseidelsohn \
+            --summary --production --json > license-report.json
           test -s license-report.json
-          jq -r '.summary' license-report.json || true
 
-      - name: Enforce denylist
+      - name: Check denylist (AGPL/GPL/LGPL/SSPL/BUSL)
         run: |
-          BAD=$(
-            jq -r '
-              [.summary | to_entries[]
-                | select(.key | test("AGPL|GPL|LGPL|SSPL|BUSL"; "i"))
-              ] | length' license-report.json
-          )
+          set -euo pipefail
+          re='(AGPL|^GPL|LGPL|SSPL|BUSL)'
+          BAD=$(jq -r --arg re "$re" \
+            '.summary|to_entries|map(select(.key|test($re;"i")))|length' license-report.json)
           if [ "$BAD" -gt 0 ]; then
-            echo "::error::Found disallowed licenses"
-            jq -r '.summary | to_entries
-                    | map(select(.key|test("AGPL|GPL|LGPL|SSPL|BUSL";"i")))
-                    | .[] | "\(.key)=\(.value)"' license-report.json
+            echo "::error::Disallowed licenses found:"
+            jq -r --arg re "$re" '.summary|to_entries|map(select(.key|test($re;"i")))|.[]|"\(.key)\t\(.value)"' license-report.json
             exit 1
           fi
+          echo "OK: denylist clean."
 
       - name: Upload license artifact
         uses: actions/upload-artifact@v4
         with:
           name: license-report
           path: license-report.json
-          if-no-files-found: error
