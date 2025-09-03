@@ -1,100 +1,72 @@
 name: Hardening/12 licenses
-
 on:
-  push: { branches: [hardening/12-licenses] }
-  pull_request: { branches: [hardening/12-licenses] }
-
-permissions: { contents: read }
-on:
-  push:
-    branches: [hardening/12-licenses]
   pull_request:
-    branches: [hardening/12-licenses]
-
+  push:
+    branches: [main, hardening/**, feat/**]
 permissions:
   contents: read
-
-concurrency:
-  group: licenses-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   licenses:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
 
-      - name: Enable Corepack & activate pnpm
-        run: |
-          set -euo pipefail
-          corepack enable
-          VER=$(node -p "(()=>{try{const pm=(require('./package.json').packageManager||'pnpm@10.14.0');return pm.split('@')[1]||'10.14.0'}catch(e){return '10.14.0'}})()")
-          corepack prepare pnpm@${VER} --activate
-          pnpm -v
-
-      - name: Install deps (frozen, no scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Generate license report
-        run: |
-          set -euo pipefail
-          pnpm dlx -y license-checker-rseidelsohn \
-            --summary --production --json > license-report.json
-          test -s license-report.json
-
-      - name: Check denylist (AGPL/GPL/LGPL/SSPL/BUSL)
-        run: |
-          set -euo pipefail
-          re='(AGPL|^GPL|LGPL|SSPL|BUSL)'
-          BAD=$(jq -r --arg re "$re" \
-            '.summary|to_entries|map(select(.key|test($re;"i")))|length' license-report.json)
-          if [ "$BAD" -gt 0 ]; then
-            echo "::error::Disallowed licenses found:"
-            jq -r --arg re "$re" '.summary|to_entries|map(select(.key|test($re;"i")))|.[]|"\(.key)\t\(.value)"' license-report.json
-            exit 1
-          fi
-          echo "OK: denylist clean."
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '24.x'
 
-      - name: Enable Corepack & activate pnpm
-        run: |
-          set -euo pipefail
-          corepack enable
-          VER=$(node -p "(()=>{try{const pm=(require('./package.json').packageManager||'pnpm@10.14.0');return pm.split('@')[1]||'10.14.0'}catch(e){return '10.14.0'}})()")
-          corepack prepare pnpm@${VER} --activate
-          pnpm -v
+      - name: Setup pnpm 10.14.0
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+          run_install: false
 
-      - name: Install deps (frozen, no scripts)
+      - name: Install (frozen, ignore scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Generate license report
+      - name: Generate license report (JSON)
         run: |
-          set -euo pipefail
-          pnpm dlx -y license-checker-rseidelsohn \
-            --summary --production --json > license-report.json
-          test -s license-report.json
+          pnpm dlx --package license-checker-rseidelsohn@3.4.2 license-checker \
+            --json --production --relativeLicensePath --excludePrivatePackages \
+            > license-report.json
 
-      - name: Check denylist (AGPL/GPL/LGPL/SSPL/BUSL)
-        run: |
-          set -euo pipefail
-          re='(AGPL|^GPL|LGPL|SSPL|BUSL)'
-          BAD=$(jq -r --arg re "$re" \
-            '.summary|to_entries|map(select(.key|test($re;"i")))|length' license-report.json)
-          if [ "$BAD" -gt 0 ]; then
-            echo "::error::Disallowed licenses found:"
-            jq -r --arg re "$re" '.summary|to_entries|map(select(.key|test($re;"i")))|.[]|"\(.key)\t\(.value)"' license-report.json
-            exit 1
-          fi
-          echo "OK: denylist clean."
-
-      - name: Upload license artifact
+      - name: Upload license-report.json
         uses: actions/upload-artifact@v4
         with:
           name: license-report
           path: license-report.json
-          path: reports/license-report.json
-          if-no-files-found: warn
-          retention-days: 7
+          retention-days: 14
+
+      - name: Gate denylist (AGPL/GPL/LGPL/SSPL/BUSL)
+        shell: bash
+        run: |
+          jq -r 'to_entries[] | [.key, .value.licenses] | @tsv' license-report.json > /tmp/licenses.tsv
+          echo "### License Gate" >> $GITHUB_STEP_SUMMARY
+          echo "- Denylist: AGPL, GPL, LGPL, SSPL, BUSL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          DENY_RE='(^|[^A-Z])(AGPL|GPL-3\.0|GPL-2\.0|LGPL|SSPL|BUSL)([^A-Z]|$)'
+          BAD=$(grep -Ei "$DENY_RE" /tmp/licenses.tsv || true)
+          if [ -n "$BAD" ]; then
+            echo "Paket terlarang terdeteksi:"
+            echo "$BAD"
+            echo "#### ❌ Dilarang" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$BAD" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "#### ✅ Lulus denylist" >> $GITHUB_STEP_SUMMARY
+
+      - name: Warn unknown licenses (non-blocking)
+        if: always()
+        run: |
+          UNK=$(jq -r 'to_entries[] | select((.value.licenses|tostring|ascii_downcase)=="unknown") | .key' license-report.json || true)
+          if [ -n "$UNK" ]; then
+            echo "Unknown licenses (warning):"
+            echo "$UNK"
+            echo "#### ⚠️ Unknown licenses (warning)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$UNK" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi

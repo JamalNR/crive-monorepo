@@ -1,19 +1,14 @@
 name: slsa-provenance
 on:
-  release: { types: [created] }
-permissions: { contents: write, id-token: write }
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+permissions:
+  id-token: write
+  contents: write
 jobs:
-  build-and-provenance:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: |
-          set -euo pipefail
-          corepack enable
-          corepack prepare pnpm@10.14.2 --activate
-          pnpm install --frozen-lockfile --ignore-scripts
-          pnpm run build
-      - uses: slsa-framework/slsa-github-generator@v2
-        with: { build-artifacts: "dist/**" }
+  provenance:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: "${{ github.event.workflow_run.id }}"

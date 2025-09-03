@@ -1,0 +1,33 @@
+name: lockfile-guard
+
+on:
+  pull_request:
+    branches: [hardening/12-licenses, main]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect lockfile/package.json changes
+        id: diff
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=2 origin "${{ github.base_ref }}"
+          git diff --name-only "origin/${{ github.base_ref }}...HEAD" > changed.txt
+          echo "Changed files:"; cat changed.txt || true
+          if grep -E '(^|/)pnpm-lock\.yaml$|(^|/)package\.json$' changed.txt >/dev/null; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Block unless labelled 'deps-change'
+        if: steps.diff.outputs.found == 'true' && !contains(github.event.pull_request.labels.*.name, 'deps-change')
+        run: |
+          echo "::error::Changes to pnpm-lock.yaml/package.json must go via a deps-change PR with label 'deps-change'."
+          exit 1

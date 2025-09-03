@@ -1,66 +1,59 @@
-name: hardening/12: deps-audit gate
-
+name: deps-audit
 on:
-  push: { branches: [hardening/12-licenses] }
-  pull_request: { branches: [hardening/12-licenses] }
-permissions: { contents: read }
-concurrency: { group: deps-audit-${{ github.ref }}, cancel-in-progress: true }
-
-on:
-  push: { branches: [hardening/12-licenses] }
-  pull_request: { branches: [hardening/12-licenses] }
-
-permissions: { contents: read }
-
-concurrency:
-  group: deps-audit-${{ github.ref }}
-  cancel-in-progress: true
-
+  pull_request:
+  push:
+    branches: [main, hardening/**, feat/**]
+permissions:
+  contents: read
+  security-events: write
 jobs:
-  audit:
+  osv:
+    name: OSV Scanner
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-
-      - name: Enable Corepack & activate pnpm
-        run: |
-          set -euo pipefail
-          corepack enable
-          VER=$(node -p "(()=>{try{const pm=(require('./package.json').packageManager||'pnpm@10.14.0');return pm.split('@')[1]||'10.14.0'}catch(e){return '10.14.0'}})()")
-          corepack prepare pnpm@${VER} --activate
-          pnpm -v
-
-      - name: Install deps (frozen, no scripts)
+        with: { node-version: '24.x' }
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.14.2, run_install: false }
+      - name: Install deps (read-only)
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Run OSV scanner
+        uses: google/osv-scanner-action@v1
+        with:
+          workspace: .
+          args: >-
+            --lockfile=pnpm-lock.yaml
+            --format sarif
+            --output osv.sarif
+      - name: Upload OSV results (SARIF)
+        uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: osv.sarif }
 
-      - name: Install deps (frozen, no scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: npm audit (JSON, prod only)
+      - name: Fail on HIGH/CRITICAL
         run: |
-          set -euo pipefail
-          npm audit --omit=dev --json > npm-audit.json || true
-          test -s npm-audit.json
-
-      - name: Enforce policy (fail on high/critical)
-        run: |
-          set -euo pipefail
-          H=$(jq -r '.metadata.vulnerabilities.high // 0' npm-audit.json)
-          C=$(jq -r '.metadata.vulnerabilities.critical // 0' npm-audit.json)
-          echo "High=$H  Critical=$C"
-          test "$H" -eq 0 -a "$C" -eq 0 || { echo "::error::Vulnerability policy violated"; exit 1; }
-      - name: Upload audit artifact
-        uses: actions/upload-artifact@v4
-        with: { name: npm-audit, path: npm-audit.json }
-          if [ "$H" -gt 0 ] || [ "$C" -gt 0 ]; then
-            echo "::error::Vulnerability policy violated (high/critical found)."
+          jq -r '[.runs[].results[]?|.ruleId] | length' osv.sarif >/dev/null 2>&1 || echo "{}" >/dev/null
+          # Simple severity gate via summary JSON (best-effort using findings text)
+          HIGH=$(jq -r '..|.level? | select(.!=null)' osv.sarif | grep -iE 'error|high|critical' | wc -l || true)
+          if [ "${HIGH:-0}" -gt 0 ]; then
+            echo "Found HIGH/CRITICAL vulnerabilities via OSV."
             exit 1
           fi
-
-      - name: Upload audit artifact
-        uses: actions/upload-artifact@v4
+  trivy:
+    name: Trivy FS (node modules)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.28.0
         with:
-          name: npm-audit
-          path: npm-audit.json
+          scan-type: fs
+          scan-ref: .
+          ignore-unfixed: true
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: trivy.sarif }
