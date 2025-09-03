@@ -1,0 +1,40 @@
+name: Hardening/12 licenses
+
+on:
+  push:
+    branches:
+      - hardening/12-licenses
+  pull_request:
+    branches:
+      - hardening/12-licenses
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardening-12-licenses-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  licenses:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      
+
+- name: Enable Corepack & activate pnpm from packageManager
+  run: |
+    corepack enable
+    VER=20 20 12 61 79 80 81 701 702 33 98 100 204 250 395 398 399 400jq -r '.packageManager|split("@")[1] // "10.14.0"' package.json)
+    echo "Using pnpm "
+    corepack prepare pnpm --activate
+    which pnpm || (echo "pnpm not on PATH" && exit 1)
+    pnpm -v
+    

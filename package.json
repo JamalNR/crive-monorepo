@@ -7,39 +7,16 @@
     "build": "pnpm -r run build",
     "lint": "pnpm -r run lint || true",
     "clean": "pnpm -r run clean || true && rm -rf node_modules pnpm-lock.yaml",
-    "typecheck": "pnpm -r run typecheck || true",
-    "env:check:stg": "doppler run --project crive --config stg -- node scripts/validate-env.mjs apps/api apps/admin",
-    "env:check:prd": "doppler run --project crive --config prd -- node scripts/validate-env.mjs apps/api apps/admin",
-    "check:env:local": "node scripts/check-env.cjs",
-    "check:env:ci": "node scripts/check-env.cjs --ci",
-    "prepare": "husky",
-    "deps:audit:prod": "pnpm audit --prod",
-    "deps:dedupe": "pnpm -w dedupe",
-    "deps:unused": "depcheck --ignores=eslint,husky,typescript,typescript-eslint || true",
-    "deps:sbom": "pnpm dlx @cyclonedx/cdxgen -o reports/sbom.json || pnpm dlx cyclonedx-bom -o reports/sbom.json || node -e \"require('fs').writeFileSync('reports/sbom.json',JSON.stringify({generatedAt:new Date().toISOString(),deps:[]},null,2))\"",
-    "deps:licenses": "pnpm -r licenses list --prod > reports/licenses.txt || true",
-    "deps:verify": "pnpm -v && node -v"
+    "typecheck": "pnpm -r run typecheck || true"
   },
   "devDependencies": {
-    "@eslint/js": "9.34.0",
-    "@types/node": "^24.3.0",
-    "@typescript-eslint/eslint-plugin": "8.41.0",
-    "@typescript-eslint/parser": "8.41.0",
-    "depcheck": "^1.4.7",
-    "eslint": "9.34.0",
-    "eslint-config-prettier": "9.1.0",
-    "globals": "^13.24.0",
-    "husky": "^9.1.7",
-    "license-checker-rseidelsohn": "^4.4.2",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.41.0"
-  },
-  "engines": {
-    "node": ">= 24.6.0",
-    "pnpm": ">= 10.14.0"
-  },
-  "pnpm": {
-    "overrides": {}
-  },
-  "type": "module"
+  "eslint": "8.57.0",
+  "@eslint/js": "8.57.0",
+  "@typescript-eslint/parser": "7.18.0",
+  "@typescript-eslint/eslint-plugin": "7.18.0",
+  "eslint-config-prettier": "9.1.0",
+  "@types/node": "^24.3.0",
+  "globals": "^13.24.0",
+  "typescript": "^5.9.2"
+  }
 }

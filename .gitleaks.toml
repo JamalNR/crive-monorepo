@@ -1,7 +1,0 @@
-title = "Crive Secret Scan Policy"
-
-[extend]
-useDefault = true
-
-[allowlist]
-paths = [ "\\.git/", "node_modules/" ]

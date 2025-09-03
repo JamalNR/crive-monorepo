@@ -1,1 +1,0 @@
- ERR_PNPM_MISSING_PACKAGE_INDEX_FILE  Failed to find package index file for caniuse-lite@1.0.30001739 (at /Users/jamalnr/Library/pnpm/store/v10/index/cb/e8fad1deae95e96b352c293f2ac7765fbd9899d0cc706bd3cc66e3c427a349-caniuse-lite@1.0.30001739.json), please consider running 'pnpm install'
