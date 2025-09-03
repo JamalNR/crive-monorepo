@@ -55,3 +55,6 @@ backups/
 .github/workflows/*.bak
 .github/workflows/_backup/
 .github/workflows/*.bak.*
+
+# local artifacts
+artifacts/
