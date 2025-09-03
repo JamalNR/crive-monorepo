@@ -2,11 +2,19 @@ name: hardening/12: SBOM (CycloneDX)
 on:
   push: { branches: [hardening/12-licenses] }
   pull_request: { branches: [hardening/12-licenses] }
+
+on:
+  push: { branches: [hardening/12-licenses] }
+  pull_request: { branches: [hardening/12-licenses] }
 permissions:
   contents: read
   id-token: write
   attestations: write
 concurrency: { group: sbom-${{ github.ref }}, cancel-in-progress: true }
+concurrency:
+  group: sbom-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   sbom:
     runs-on: ubuntu-latest
@@ -34,3 +42,24 @@ jobs:
       - name: Attest SBOM (SLSA provenance)
         uses: actions/attest-build-provenance@v1
         with: { subject-path: sbom.json }
+      - name: Install deps (frozen, no scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate CycloneDX SBOM (JSON)
+        run: |
+          set -euo pipefail
+          pnpm dlx -y @cyclonedx/cyclonedx-npm@4 \
+            --json \
+            --output-file sbom.json
+          test -s sbom.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+
+      - name: Attest SBOM (SLSA provenance)
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: sbom.json
