@@ -1,0 +1,19 @@
+name: Renovate
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 20 * * *'  # 03:00 WIB (UTC+7)
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: renovate
+  cancel-in-progress: true
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: renovatebot/github-action@v40
+        with:
+          configurationFile: renovate.json
+          token: ${{ secrets.GITHUB_TOKEN }}
