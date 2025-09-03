@@ -1,10 +1,8 @@
 name: Hardening/12 licenses
 
 on:
-  push:
-    branches: [hardening/12-licenses]
-  pull_request:
-    branches: [hardening/12-licenses]
+  push: { branches: [hardening/12-licenses] }
+  pull_request: { branches: [hardening/12-licenses] }
 
 permissions: { contents: read }
 
@@ -18,8 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
+        with: { node-version: 20 }
 
       - name: Enable Corepack & activate pnpm
         run: |

@@ -1,10 +1,8 @@
 name: hardening/12: deps-audit gate
 
 on:
-  push:
-    branches: [hardening/12-licenses]
-  pull_request:
-    branches: [hardening/12-licenses]
+  push: { branches: [hardening/12-licenses] }
+  pull_request: { branches: [hardening/12-licenses] }
 
 permissions: { contents: read }
 
@@ -18,8 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
+        with: { node-version: 20 }
 
       - name: Enable Corepack & activate pnpm
         run: |
@@ -38,7 +35,7 @@ jobs:
           npm audit --omit=dev --json > npm-audit.json || true
           test -s npm-audit.json
 
-      - name: Enforce policy (fail on high/critical; allowlist opsional)
+      - name: Enforce policy (fail on high/critical)
         run: |
           set -euo pipefail
           H=$(jq -r '.metadata.vulnerabilities.high // 0' npm-audit.json)

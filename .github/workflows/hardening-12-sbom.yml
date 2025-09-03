@@ -1,10 +1,8 @@
 name: hardening/12: SBOM (CycloneDX)
 
 on:
-  push:
-    branches: [hardening/12-licenses]
-  pull_request:
-    branches: [hardening/12-licenses]
+  push: { branches: [hardening/12-licenses] }
+  pull_request: { branches: [hardening/12-licenses] }
 
 permissions:
   contents: read
@@ -20,17 +18,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
+        with: { node-version: 20 }
 
-      - name: Enable Corepack & activate pnpm (from packageManager)
+      - name: Enable Corepack & activate pnpm
         run: |
           set -euo pipefail
           corepack enable
           VER=$(node -p "(()=>{try{const pm=(require('./package.json').packageManager||'pnpm@10.14.0');return pm.split('@')[1]||'10.14.0'}catch(e){return '10.14.0'}})()")
-          echo "Using pnpm ${VER}"
           corepack prepare pnpm@${VER} --activate
           pnpm -v
 
@@ -41,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           pnpm dlx -y @cyclonedx/cyclonedx-npm@4 \
-            --json --omit dev \
+            --json \
             --output-file sbom.json
           test -s sbom.json
 
