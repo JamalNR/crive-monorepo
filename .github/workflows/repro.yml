@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   repro:
-    name: repro
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -22,11 +21,15 @@ jobs:
           node-version: '24.x'
           cache: 'pnpm'
 
-      - name: Setup PNPM (no auto install)
+      # >>> ini kunci: install pnpm & export ke PATH
+      - name: Setup PNPM (v10.14.2)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.2
           run_install: false
+
+      - name: Verify pnpm
+        run: pnpm --version
 
       - name: Install (frozen + ignore scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
