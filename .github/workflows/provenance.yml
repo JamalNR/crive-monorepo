@@ -48,10 +48,13 @@ jobs:
           name: provenance-sbom-${{ github.sha }}
           path: artifacts/sbom/*.json
           retention-days: 30
-
+# TEMP: attestation disabled (repo not configured fully)
+# 
       - name: Attest build provenance
         if: ${{ hashFiles('artifacts/sbom/*.json') != '' }}
         uses: actions/attest-build-provenance@v1
         with:
           subject-path: artifacts/sbom/*.json
         continue-on-error: true
+
+# if: false
