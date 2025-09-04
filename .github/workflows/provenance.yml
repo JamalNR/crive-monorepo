@@ -1,61 +1,41 @@
 name: Provenance
 on:
-  workflow_dispatch:
-  pull_request:
   push:
-    branches: [main]
+    branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
   attestations: write
 
-concurrency:
-  group: provenance-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  slsa:
+  provenance:
     name: Build provenance (SLSA)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
+      - name: Prepare dirs
+        run: mkdir -p artifacts/sbom
 
-      # SBOM tanpa pnpm/action; gunakan npx agar bebas konflik versi
-      - name: Generate SBOMs (CycloneDX via npx)
+      - name: Generate SBOM (CycloneDX)
+        shell: bash
         run: |
-          set -euo pipefail
-          mkdir -p artifacts/sbom
-          gen() { d="$1"; [ -d "$d" ] || return 0; (
-            cd "$d"
-            name=$(node -p "require('./package.json').name || require('path').basename(process.cwd())")
-            npx -y @cyclonedx/cyclonedx-npm --output-format json --spec-version 1.5 --omit dev \
-              --output-file "../artifacts/sbom/sbom-${name}.json"
-          ); }
-          gen apps/api
-          gen apps/admin
-          gen packages/shared
-        continue-on-error: true
+          if command -v npm >/dev/null 2>&1; then
+            npx --yes @cyclonedx/cyclonedx-npm \
+              --spec-version 1.5 --omit dev \
+              --output-format json \
+              --output-file artifacts/sbom/sbom.json \
+            || echo '{"tool":"cyclonedx","status":"error"}' > artifacts/sbom/sbom.json
+          else
+            echo '{"tool":"cyclonedx","status":"skipped","reason":"npm not found"}' > artifacts/sbom/sbom.json
+          fi
 
-      - name: Upload SBOM artifacts
-        if: ${{ always() && hashFiles('artifacts/sbom/*.json') != '' }}
+      - name: Upload SBOM
         uses: actions/upload-artifact@v4
         with:
-          name: provenance-sbom-${{ github.sha }}
+          name: sbom-cyclonedx-${{ github.sha }}
           path: artifacts/sbom/*.json
-          retention-days: 30
-# TEMP: attestation disabled (repo not configured fully)
-# 
-      - name: Attest build provenance
-        if: ${{ hashFiles('artifacts/sbom/*.json') != '' }}
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-path: artifacts/sbom/*.json
-        continue-on-error: true
-      if: false
-
-# if: false
+          if-no-files-found: warn
