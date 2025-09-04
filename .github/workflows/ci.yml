@@ -342,3 +342,29 @@ jobs:
             artifacts/security/*.json
           retention-days: 30
 
+
+  report:
+    name: report
+    if: github.event_name == 'pull_request'
+    needs:
+      - job build
+      - Security cross-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts (SBOM + Security)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: |
+            sbom-cyclonedx-*
+            security-crosscheck-*
+          merge-multiple: true
+          path: artifacts/combined
+
+      - name: Generate PR summary
+        run: node scripts/pr-summary.mjs
+
+      - name: Post sticky PR comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          recreate: true
+          path: artifacts/combined/PR_SUMMARY.md
