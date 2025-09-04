@@ -1,0 +1,14 @@
+name: deps-audit
+on: [push, pull_request]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.14.2 }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm audit --prod --json | tee audit.json
+      - run: node -e "const r=require('./audit.json'); const v=r.metadata?.vulnerabilities||{}; const fail=(v.critical+v.high)>0; if(fail){console.error('Fail: HIGH/CRITICAL>0'); process.exit(1)}"
