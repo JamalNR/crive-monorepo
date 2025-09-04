@@ -17,7 +17,7 @@ services:
     command: ["pnpm","-w","--filter","@crive/api","dev"]
 
   admin:
-    image: node:22-alpine
+    image: node@sha256:d2166de198f26e17e5a442f537754dd616ab069c47cc57b889310a717e0abbf9
     working_dir: /app
     environment:
       NODE_ENV: development
