@@ -1,0 +1,56 @@
+name: Reproducible build
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: repro
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'pnpm'
+
+      - name: Setup PNPM (no auto install)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.2
+          run_install: false
+
+      - name: Install (frozen + ignore scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build
+        run: pnpm -r run build
+
+      - name: Ensure repo clean after build (no side-effects)
+        shell: bash
+        run: |
+          if ! git diff --name-only --exit-code; then
+            echo "::error::Build produced repo changes (not reproducible). See diff above."
+            exit 1
+          fi
+
+      - name: Snapshot env (artifact)
+        run: |
+          mkdir -p artifacts/repro
+          node -v > artifacts/repro/env.txt
+          pnpm -v >> artifacts/repro/env.txt
+          pnpm list -r --depth -1 > artifacts/repro/tree.txt || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: repro-${{ github.sha }}
+          path: artifacts/repro/*
+          if-no-files-found: warn
