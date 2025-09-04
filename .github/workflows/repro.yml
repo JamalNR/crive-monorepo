@@ -1,12 +1,12 @@
 name: Reproducible build
+
 on:
   workflow_dispatch:
   pull_request:
   push:
     branches: [ main ]
 
-permissions:
-  contents: read
+permissions: { contents: read }
 
 jobs:
   repro:
@@ -17,6 +17,7 @@ jobs:
       LC_ALL: C
       LANG: C
       SOURCE_DATE_EPOCH: 1704067200
+      ACTIONS_STEP_DEBUG: 'true'
 
     steps:
       - uses: actions/checkout@v4
@@ -43,14 +44,25 @@ jobs:
           V=$(node -e "try{const pm=require('./package.json').packageManager||'pnpm@10.14.0';console.log(pm.split('@')[1]||'10.14.0')}catch(e){console.log('10.14.0')}")
           echo "version=$V" >> "$GITHUB_OUTPUT"
 
-      - name: Setup pnpm (corepack + fallback)
+      - name: Setup pnpm via corepack (try)
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
           corepack enable
-          corepack prepare "pnpm@${{ steps.pnpmv.outputs.version }}" --activate \
-            || npm i -g "pnpm@${{ steps.pnpmv.outputs.version }}"
+          corepack prepare "pnpm@${{ steps.pnpmv.outputs.version }}" --activate || true
+
+      - name: Fallback ensure pnpm binary (action-setup)
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.pnpmv.outputs.version }}
+          run_install: false
+
+      - name: Verify pnpm & PATH
+        run: |
+          set -x
+          which pnpm || true
           pnpm --version
+          echo "$PATH"
 
       - name: Install deps (frozen, no scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
