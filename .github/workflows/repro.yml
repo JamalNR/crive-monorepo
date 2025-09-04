@@ -13,50 +13,55 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # perlu untuk git diff
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
 
-      - name: Setup Node 24.x
+      - name: Setup Node 24.x (cache pnpm)
         uses: actions/setup-node@v4
         with:
           node-version: '24.x'
           cache: 'pnpm'
 
-      # JALUR UTAMA: install pnpm dan pastikan ada di PATH
+      # 1) pnpm/action-setup (tidak mematikan job bila gagal)
       - name: Setup PNPM via action
         uses: pnpm/action-setup@v4
+        continue-on-error: true
         with:
           version: 10.14.2
           run_install: false
 
-      # FALLBACK: corepack (jika langkah di atas gagal/tidak menaruh ke PATH)
-      - name: Fallback enable pnpm via corepack
+      # 2) Fallback corepack (tidak mematikan job bila gagal)
+      - name: Fallback via corepack
         shell: bash
+        continue-on-error: true
         run: |
-          set -e
           if ! command -v pnpm >/dev/null 2>&1; then
-            echo "pnpm not found, enabling via corepack…"
             corepack enable
             corepack prepare pnpm@10.14.2 --activate
           fi
-          echo "PNPM=$(pnpm --version)"
 
-      - name: Install (frozen, no scripts)
+      # 3) Fallback terakhir: global npm
+      - name: Final fallback via npm -g
+        shell: bash
+        run: |
+          if ! command -v pnpm >/dev/null 2>&1; then
+            npm i -g pnpm@10.14.2
+          fi
+          echo "PNPM=$(pnpm --version)"
+          which pnpm
+
+      - name: Install (frozen + no scripts)
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build all packages
-        run: pnpm -r run build
+      - name: Build (skip paket tanpa script)
+        run: pnpm -r --if-present run build
 
-      - name: Ensure reproducible (no dirty diff)
+      - name: Ensure reproducible (no repo changes)
         shell: bash
         run: |
           set -e
           mkdir -p artifacts/repro
-          # simpan status & diff untuk debugging bila gagal
           git status --porcelain=v1 > artifacts/repro/status.txt || true
-          # kalau ada perubahan, gagal
           if ! git diff --quiet; then
             git --no-pager diff > artifacts/repro/diff.patch || true
             echo "::error::Build produced repo changes (not reproducible). See artifacts/repro/diff.patch"
