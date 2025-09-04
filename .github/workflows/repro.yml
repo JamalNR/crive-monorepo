@@ -16,8 +16,8 @@ jobs:
       TZ: UTC
       LC_ALL: C
       LANG: C
-      # Membuat timestamp stabil; override bila perlu dari luar
       SOURCE_DATE_EPOCH: 1704067200
+
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -32,28 +32,46 @@ jobs:
           git reset --hard
           git clean -fdx
 
+      - name: Prepare artifacts dir
+        run: mkdir -p artifacts/repro
+
+      - name: Resolve pnpm version from packageManager (fallback 10.14.0)
+        id: pnpmv
+        shell: bash
+        run: |
+          set -euo pipefail
+          V=$(node -e "try{const pm=require('./package.json').packageManager||'pnpm@10.14.0';console.log(pm.split('@')[1]||'10.14.0')}catch(e){console.log('10.14.0')}")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm (corepack + fallback)
+        shell: bash
+        run: |
+          set -eux
+          corepack enable
+          corepack prepare "pnpm@${{ steps.pnpmv.outputs.version }}" --activate \
+            || npm i -g "pnpm@${{ steps.pnpmv.outputs.version }}"
+          pnpm --version
+
       - name: Install deps (frozen, no scripts)
-        run: npx -y pnpm@10.14.2 install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build (skip paket tanpa script)
-        run: npx -y pnpm@10.14.2 -r --if-present run build
+        run: pnpm -r --if-present run build
 
       - name: Repro check (compute diff & status)
         id: reprocheck
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/repro
           git status --porcelain=v1 > artifacts/repro/status.txt || true
           HAS_DIFF=0
           if ! git diff --quiet; then
             HAS_DIFF=1
             git --no-pager diff > artifacts/repro/diff.patch || true
-            echo "Found non-reproducible changes. See diff.patch"
           fi
           node -v                                    > artifacts/repro/env.txt
-          npx -y pnpm@10.14.2 -v                    >> artifacts/repro/env.txt
-          npx -y pnpm@10.14.2 list -r --depth -1     > artifacts/repro/tree.txt || true
+          pnpm -v                                   >> artifacts/repro/env.txt
+          pnpm list -r --depth -1                    > artifacts/repro/tree.txt || true
           echo "has_diff=$HAS_DIFF" >> "$GITHUB_OUTPUT"
 
       - name: Upload repro artifacts (always)
@@ -67,5 +85,5 @@ jobs:
       - name: Gate reproducibility
         if: steps.reprocheck.outputs.has_diff == '1'
         run: |
-          echo "::error::Build produced repo changes (not reproducible). See uploaded artifact 'repro-${GITHUB_SHA}'."
+          echo "::error::Build produced repo changes (not reproducible). See artifact 'repro-${GITHUB_SHA}'."
           exit 1
