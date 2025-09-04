@@ -26,3 +26,4 @@ packages/*/dist/
 apps/*/dist/
 prisma/**/client/
 path/yang-muncul-di-diff
+path/yang-muncul
