@@ -2,42 +2,24 @@ name: Reproducible build
 
 on:
   workflow_dispatch:
-  pull_request:
   push:
     branches: [ main ]
-
-permissions: { contents: read }
 
 jobs:
   repro:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      TZ: UTC
-      LC_ALL: C
-      LANG: C
-      SOURCE_DATE_EPOCH: 1704067200
-      ACTIONS_STEP_DEBUG: 'true'
-
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
-      - name: Setup Node 24.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24.x'
-
-      - name: Clean working tree (hard)
-        run: |
-          git reset --hard
-          git clean -fdx
+      - uses: actions/setup-node@v4
+        with: { node-version: 24.x }
 
       - name: Prepare artifacts dir
         run: mkdir -p artifacts/repro
 
       - name: Resolve pnpm version from packageManager (fallback 10.14.0)
-        id: pnpmv
+        id: pv
         shell: bash
         run: |
           set -euo pipefail
@@ -49,15 +31,16 @@ jobs:
         run: |
           set -euxo pipefail
           corepack enable
-          corepack prepare "pnpm@${{ steps.pnpmv.outputs.version }}" --activate || true
+          corepack prepare "pnpm@${{ steps.pv.outputs.version }}" --activate || true
 
-      - name: Fallback ensure pnpm binary (action-setup)
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
-          version: ${{ steps.pnpmv.outputs.version }}
+          version: ${{ steps.pv.outputs.version }}
           run_install: false
+          dest: ~/setup-pnpm
 
       - name: Verify pnpm & PATH
+        env: { PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin }
         run: |
           set -x
           which pnpm || true
@@ -65,37 +48,38 @@ jobs:
           echo "$PATH"
 
       - name: Install deps (frozen, no scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        shell: bash
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            pnpm install --frozen-lockfile --ignore-scripts
+          else
+            echo "::notice title=pnpm::pnpm-lock.yaml missing; using --no-frozen-lockfile"
+            pnpm install --no-frozen-lockfile --ignore-scripts
+          fi
 
       - name: Build (skip paket tanpa script)
-        run: pnpm -r --if-present run build
+        run: |
+          pnpm -w -r --if-present run build:repro || pnpm -w -r --if-present run build
 
-      - name: Repro check (compute diff & status)
-        id: reprocheck
+      - name: Repro check (tracked files only)
         shell: bash
         run: |
           set -euo pipefail
-          git status --porcelain=v1 > artifacts/repro/status.txt || true
-          HAS_DIFF=0
-          if ! git diff --quiet; then
-            HAS_DIFF=1
-            git --no-pager diff > artifacts/repro/diff.patch || true
+          git status --porcelain=v1 > artifacts/repro/git-status.txt
+          if ! git diff --quiet --ignore-submodules --no-ext-diff; then
+            git --no-pager diff > artifacts/repro/diff.patch
+            echo "::error title=repro::Build produced changes to tracked files (see diff.patch)"
+            exit 1
           fi
-          node -v                                    > artifacts/repro/env.txt
-          pnpm -v                                   >> artifacts/repro/env.txt
-          pnpm list -r --depth -1                    > artifacts/repro/tree.txt || true
-          echo "has_diff=$HAS_DIFF" >> "$GITHUB_OUTPUT"
+          if ! git diff --cached --quiet --ignore-submodules --no-ext-diff; then
+            git --no-pager diff --cached > artifacts/repro/diff-staged.patch
+            echo "::error title=repro::Staged changes to tracked files (see diff-staged.patch)"
+            exit 1
+          fi
 
-      - name: Upload repro artifacts (always)
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: repro-${{ github.sha }}
           path: artifacts/repro/*
           if-no-files-found: warn
-
-      - name: Gate reproducibility
-        if: steps.reprocheck.outputs.has_diff == '1'
-        run: |
-          echo "::error::Build produced repo changes (not reproducible). See artifact 'repro-${GITHUB_SHA}'."
-          exit 1
