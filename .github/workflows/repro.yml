@@ -11,48 +11,62 @@ permissions:
 jobs:
   repro:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # perlu untuk git diff
 
-      - name: Use Node 24.x
+      - name: Setup Node 24.x
         uses: actions/setup-node@v4
         with:
           node-version: '24.x'
           cache: 'pnpm'
 
-      # >>> ini kunci: install pnpm & export ke PATH
-      - name: Setup PNPM (v10.14.2)
+      # JALUR UTAMA: install pnpm dan pastikan ada di PATH
+      - name: Setup PNPM via action
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.2
           run_install: false
 
-      - name: Verify pnpm
-        run: pnpm --version
-
-      - name: Install (frozen + ignore scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Build
-        run: pnpm -r run build
-
-      - name: Ensure repo clean after build (no side-effects)
+      # FALLBACK: corepack (jika langkah di atas gagal/tidak menaruh ke PATH)
+      - name: Fallback enable pnpm via corepack
         shell: bash
         run: |
-          if ! git diff --name-only --exit-code; then
-            echo "::error::Build produced repo changes (not reproducible). See diff above."
+          set -e
+          if ! command -v pnpm >/dev/null 2>&1; then
+            echo "pnpm not found, enabling via corepack…"
+            corepack enable
+            corepack prepare pnpm@10.14.2 --activate
+          fi
+          echo "PNPM=$(pnpm --version)"
+
+      - name: Install (frozen, no scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build all packages
+        run: pnpm -r run build
+
+      - name: Ensure reproducible (no dirty diff)
+        shell: bash
+        run: |
+          set -e
+          mkdir -p artifacts/repro
+          # simpan status & diff untuk debugging bila gagal
+          git status --porcelain=v1 > artifacts/repro/status.txt || true
+          # kalau ada perubahan, gagal
+          if ! git diff --quiet; then
+            git --no-pager diff > artifacts/repro/diff.patch || true
+            echo "::error::Build produced repo changes (not reproducible). See artifacts/repro/diff.patch"
             exit 1
           fi
-
-      - name: Snapshot env (artifact)
-        run: |
-          mkdir -p artifacts/repro
-          node -v > artifacts/repro/env.txt
-          pnpm -v >> artifacts/repro/env.txt
+          node -v   > artifacts/repro/env.txt
+          pnpm -v  >> artifacts/repro/env.txt
           pnpm list -r --depth -1 > artifacts/repro/tree.txt || true
 
-      - name: Upload artifact
+      - name: Upload repro artifacts
         uses: actions/upload-artifact@v4
         with:
           name: repro-${{ github.sha }}
