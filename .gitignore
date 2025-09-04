@@ -25,3 +25,4 @@ src/generated/
 packages/*/dist/
 apps/*/dist/
 prisma/**/client/
+path/nyata/dari-diff
