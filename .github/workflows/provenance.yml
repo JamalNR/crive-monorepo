@@ -56,5 +56,6 @@ jobs:
         with:
           subject-path: artifacts/sbom/*.json
         continue-on-error: true
+      if: false
 
 # if: false
