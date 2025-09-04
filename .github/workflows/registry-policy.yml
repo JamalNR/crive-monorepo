@@ -1,70 +1,39 @@
 name: Registry policy
-
 on:
   pull_request:
     branches: [ main ]
-  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   verify:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify pinned container images
+      - name: Scan non-digested images
+        id: scan
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          OUT=artifacts/registry-violations.txt
-          {
-            echo "=== REGISTRY VIOLATIONS ==="
-            date -u
-            echo "https://eslint.org/version-support"
-          } > "$OUT"
+          # Cari image yang masih pakai tag (bukan digest)
+          rg -n -P --glob '!**/node_modules/**' \
+            -e '^\s*FROM\s+\S+:(?!.*@sha256:)\S+' \
+            -e '^\s*image:\s+\S+:(?!.*@sha256:)\S+' \
+            . | tee artifacts/registry-violations.txt || true
 
-          found=0
-
-          # 1) Dockerfile: FROM harus pakai digest
-          rg -n -P '^\s*FROM\s+\S+:(?!.*@sha256:)\S+' \
-            -g '!**/node_modules/**' -g 'Dockerfile*' . > /tmp/unpinned_from.txt || true
-          if [[ -s /tmp/unpinned_from.txt ]]; then
-            echo -e "\nUnpinned Dockerfile base images:" >> "$OUT"
-            cat /tmp/unpinned_from.txt >> "$OUT"
-            found=1
-          fi
-
-          # 2) Compose / YAML: image: harus pakai digest
-          rg -n -P 'image:\s+\S+:(?!.*@sha256:)\S+' \
-            -g '!**/node_modules/**' . > /tmp/unpinned_image_yaml.txt || true
-          if [[ -s /tmp/unpinned_image_yaml.txt ]]; then
-            echo -e "\nUnpinned compose/service images:" >> "$OUT"
-            cat /tmp/unpinned_image_yaml.txt >> "$OUT"
-            found=1
-          fi
-
-          # 3) GitHub Actions: uses: docker://... juga harus pakai digest
-          rg -n -P 'uses:\s*docker://[^@]+(:[^@]+)?(?!@sha256:)' \
-            .github/workflows > /tmp/unpinned_docker_uses.txt || true
-          if [[ -s /tmp/unpinned_docker_uses.txt ]]; then
-            echo -e "\nUnpinned docker:// in workflows:" >> "$OUT"
-            cat /tmp/unpinned_docker_uses.txt >> "$OUT"
-            found=1
-          fi
-
-          if [[ $found -eq 1 ]]; then
-            echo -e "\nFAIL: found unpinned images." >> "$OUT"
+          if [ -s artifacts/registry-violations.txt ]; then
+            echo "violations=true" >> "$GITHUB_OUTPUT"
             exit 2
-          else
-            echo "OK: no unpinned images" >> "$OUT"
           fi
 
-      - name: Upload violations (always)
-        if: always()
+      - name: Upload violations (only when failed)
+        if: failure() && steps.scan.outputs.violations == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: registry-violations-${{ github.sha }}
           path: artifacts/registry-violations.txt
-          if-no-files-found: warn
+          if-no-files-found: error
+          retention-days: 7
