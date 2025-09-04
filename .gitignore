@@ -25,3 +25,4 @@ src/generated/
 packages/*/dist/
 apps/*/dist/
 prisma/**/client/
+path/yang-muncul-di-diff
