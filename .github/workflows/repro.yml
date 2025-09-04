@@ -12,38 +12,60 @@ jobs:
   repro:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      TZ: UTC
+      LC_ALL: C
+      LANG: C
+      # Membuat timestamp stabil; override bila perlu dari luar
+      SOURCE_DATE_EPOCH: 1704067200
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node 24.x
+        uses: actions/setup-node@v4
         with:
           node-version: '24.x'
 
-      - name: Install (frozen + no scripts)
+      - name: Clean working tree (hard)
+        run: |
+          git reset --hard
+          git clean -fdx
+
+      - name: Install deps (frozen, no scripts)
         run: npx -y pnpm@10.14.2 install --frozen-lockfile --ignore-scripts
 
       - name: Build (skip paket tanpa script)
         run: npx -y pnpm@10.14.2 -r --if-present run build
 
-      - name: Ensure reproducible (no repo changes)
+      - name: Repro check (compute diff & status)
+        id: reprocheck
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p artifacts/repro
           git status --porcelain=v1 > artifacts/repro/status.txt || true
+          HAS_DIFF=0
           if ! git diff --quiet; then
+            HAS_DIFF=1
             git --no-pager diff > artifacts/repro/diff.patch || true
-            echo "::error::Build produced repo changes (not reproducible). See artifacts/repro/diff.patch"
-            exit 1
+            echo "Found non-reproducible changes. See diff.patch"
           fi
           node -v                                    > artifacts/repro/env.txt
           npx -y pnpm@10.14.2 -v                    >> artifacts/repro/env.txt
           npx -y pnpm@10.14.2 list -r --depth -1     > artifacts/repro/tree.txt || true
+          echo "has_diff=$HAS_DIFF" >> "$GITHUB_OUTPUT"
 
-      - name: Upload repro artifacts
+      - name: Upload repro artifacts (always)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: repro-${{ github.sha }}
           path: artifacts/repro/*
           if-no-files-found: warn
+
+      - name: Gate reproducibility
+        if: steps.reprocheck.outputs.has_diff == '1'
+        run: |
+          echo "::error::Build produced repo changes (not reproducible). See uploaded artifact 'repro-${GITHUB_SHA}'."
+          exit 1
