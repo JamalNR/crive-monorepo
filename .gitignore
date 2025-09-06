@@ -29,3 +29,7 @@ path/nyata/dari-diff
 
 # allow env template
 !.env.example
+
+# allow prisma artifacts
+!apps/api/prisma/migrations/**/migration.sql
+!apps/api/prisma/sql/*.sql
