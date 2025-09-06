@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Visibility {
+  public
+  private
+}
+
+enum ModerationStatus {
+  pending
+  ok
+  flagged
+}
+
+enum EntryType {
+  credit
+  debit
+}
+
+enum LedgerReason {
+  poinmate_claim
+  content_reward
+  adjustment
+  withdrawal
+}
+
+model User {
+  id           String  @id @default(uuid()) @db.Uuid
+  username     String  @unique
+  email        String  @unique @db.Text
+  passwordHash String  @map("password_hash")
+  referralCode String? @map("referral_code")
+  bio          String?
+  avatarUrl    String? @map("avatar_url")
+  tierId       String? @map("tier_id") @db.Uuid
+  tier         Tiers?  @relation(fields: [tierId], references: [id], onDelete: Restrict)
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  lastLoginAt DateTime? @map("last_login_at")
+
+  contents Contents[]
+  rewards  RewardHistory[]
+  ledger   WalletLedger[]
+
+  @@index([tierId])
+  @@map("users")
+}
+
+model Tiers {
+  id                  String   @id @default(uuid()) @db.Uuid
+  code                String   @unique
+  name                String
+  pointMultiplier     Decimal  @map("point_multiplier") @db.Decimal(10, 2)
+  limits              Json?
+  activeUsersEstimate Int      @map("active_users_estimate")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  users User[]
+
+  @@index([code])
+  @@map("tiers")
+}
+
+model Contents {
+  id               String           @id @default(uuid()) @db.Uuid
+  userId           String           @map("user_id") @db.Uuid
+  user             User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  title            String
+  body             String
+  visibility       Visibility
+  moderationStatus ModerationStatus @map("moderation_status")
+  deletedAt        DateTime?        @map("deleted_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([moderationStatus])
+  @@index([deletedAt])
+  @@map("contents")
+}
+
+model RewardHistory {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  user           User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  source         String
+  points         Int
+  claimedAt      DateTime @default(now()) @map("claimed_at")
+  idempotencyKey String   @unique @map("idempotency_key")
+  meta           Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, claimedAt(sort: Desc)])
+  @@index([source])
+  @@map("reward_history")
+}
+
+model WalletLedger {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  entryType   EntryType    @map("entry_type")
+  amount      Int
+  reason      LedgerReason
+  referenceId String?      @map("reference_id")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([reason])
+  @@index([referenceId])
+  @@map("wallet_ledger")
+}
