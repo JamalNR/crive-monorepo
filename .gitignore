@@ -26,3 +26,6 @@ packages/*/dist/
 apps/*/dist/
 prisma/**/client/
 path/nyata/dari-diff
+
+# allow env template
+!.env.example
