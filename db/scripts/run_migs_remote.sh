@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# pastikan var ada
 : "${DATABASE_URL:?DATABASE_URL not set}"
 DOCKER=${DOCKER:-docker}
 if ! $DOCKER info >/dev/null 2>&1; then DOCKER="sudo -n docker"; fi
