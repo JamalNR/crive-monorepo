@@ -45,8 +45,8 @@ jobs:
         run: tar czf migs.tgz db/scripts db/migrations
       - name: Upload package (SCP)
         run: |
-          ssh -i id_stg -o StrictHostKeyChecking=no ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }} "mkdir -p \$HOME/.crive-migs/work"
-          scp -i id_stg -o StrictHostKeyChecking=no migs.tgz ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }}:\$HOME/.crive-migs/work/migs.tgz
+          ssh -i id_stg -o StrictHostKeyChecking=no ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }} "mkdir -p ~/.crive-migs/work"
+          scp -i id_stg -o StrictHostKeyChecking=no migs.tgz ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }}:~/.crive-migs/work/migs.tgz
       - name: Apply migrations on STG
         run: |
           ssh -i id_stg -o StrictHostKeyChecking=no ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }} '
@@ -83,8 +83,8 @@ jobs:
         run: tar czf migs.tgz db/scripts db/migrations
       - name: Upload package (SCP)
         run: |
-          ssh -i id_prd -o StrictHostKeyChecking=no ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }} "mkdir -p \$HOME/.crive-migs/work"
-          scp -i id_prd -o StrictHostKeyChecking=no migs.tgz ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }}:\$HOME/.crive-migs/work/migs.tgz
+          ssh -i id_prd -o StrictHostKeyChecking=no ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }} "mkdir -p ~/.crive-migs/work"
+          scp -i id_prd -o StrictHostKeyChecking=no migs.tgz ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }}:~/.crive-migs/work/migs.tgz
       - name: Apply migrations on PRD
         run: |
           ssh -i id_prd -o StrictHostKeyChecking=no ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }} '
