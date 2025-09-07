@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "db:migrate:status": "node db/scripts/migrate.cjs status",
+    "db:migrate:dry": "node db/scripts/migrate.cjs dry",
+    "db:migrate:up": "node db/scripts/migrate.cjs up",
+    "db:migrate:down": "node db/scripts/migrate.cjs down"
+  }
+}

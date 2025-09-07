@@ -7,16 +7,23 @@
     "build": "pnpm -r run build",
     "lint": "pnpm -r run lint || true",
     "clean": "pnpm -r run clean || true && rm -rf node_modules pnpm-lock.yaml",
-    "typecheck": "pnpm -r run typecheck || true"
+    "typecheck": "pnpm -r run typecheck || true",
+    "db:migrate:status": "node db/scripts/migrate.cjs status",
+    "db:migrate:dry": "node db/scripts/migrate.cjs dry",
+    "db:migrate:up": "node db/scripts/migrate.cjs up",
+    "db:migrate:down": "node db/scripts/migrate.cjs down"
   },
   "devDependencies": {
-  "eslint": "8.57.0",
-  "@eslint/js": "8.57.0",
-  "@typescript-eslint/parser": "7.18.0",
-  "@typescript-eslint/eslint-plugin": "7.18.0",
-  "eslint-config-prettier": "9.1.0",
-  "@types/node": "^24.3.0",
-  "globals": "^13.24.0",
-  "typescript": "^5.9.2"
+    "@eslint/js": "8.57.0",
+    "@types/node": "^24.3.0",
+    "@typescript-eslint/eslint-plugin": "7.18.0",
+    "@typescript-eslint/parser": "7.18.0",
+    "eslint": "8.57.0",
+    "eslint-config-prettier": "9.1.0",
+    "globals": "^13.24.0",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "pg": "8.16.3"
   }
 }

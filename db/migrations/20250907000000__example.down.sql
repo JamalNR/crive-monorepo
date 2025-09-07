@@ -1,0 +1,3 @@
+-- @transaction on
+-- Example down (no-op)
+-- SELECT 1;
