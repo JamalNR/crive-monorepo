@@ -51,7 +51,7 @@ jobs:
         run: |
           ssh -i id_stg -o StrictHostKeyChecking=no ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }} '
             set -euo pipefail
-            cd "$HOME/.crive-migs/work"
+            cd ~/.crive-migs/work"
             tar xzf migs.tgz
             if docker info >/dev/null 2>&1; then DOCKER=docker; else DOCKER="sudo -n docker"; fi
             NET_ARG=""
@@ -89,7 +89,7 @@ jobs:
         run: |
           ssh -i id_prd -o StrictHostKeyChecking=no ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }} '
             set -euo pipefail
-            cd "$HOME/.crive-migs/work"
+            cd ~/.crive-migs/work"
             tar xzf migs.tgz
             if docker info >/dev/null 2>&1; then DOCKER=docker; else DOCKER="sudo -n docker"; fi
             NET_ARG=""
