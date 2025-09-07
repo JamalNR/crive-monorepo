@@ -17,8 +17,7 @@ jobs:
           POSTGRES_USER: pguser
           POSTGRES_PASSWORD: pgpass
           POSTGRES_DB: ci_migrate
-        ports:
-          - 5432:5432
+        ports: [ "5432:5432" ]
         options: >-
           --health-cmd="pg_isready -U pguser -d ci_migrate"
           --health-interval=5s --health-timeout=5s --health-retries=20
@@ -39,14 +38,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: corepack enable
-      - run: pnpm i --frozen-lockfile --ignore-scripts
-      - name: Set DATABASE_URL (stg)
-        run: echo "DATABASE_URL=${{ secrets.STG_DATABASE_URL }}" >> $GITHUB_ENV
-      - name: Migrate Up (staging)
-        run: pnpm db:migrate:up
+
+      - name: Write SSH key
+        run: |
+          echo "${{ secrets.STG_SSH_KEY_B64 }}" | base64 -d > id_stg
+          chmod 600 id_stg
+
+      - name: Package migrations
+        run: tar czf /tmp/migs.tgz db/scripts db/migrations
+
+      - name: Upload to server
+        run: |
+          rsync -e "ssh -i id_stg -o StrictHostKeyChecking=no" -avz /tmp/migs.tgz \
+            "${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }}:/deploy/migs/migs.tgz"
+
+      - name: Apply on server (STG)
+        run: |
+          ssh -i id_stg -o StrictHostKeyChecking=no ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }} <<'EOSSH'
+          set -euo pipefail
+          mkdir -p /deploy/migs/work
+          tar xzf /deploy/migs/migs.tgz -C /deploy/migs/work
+          cd /deploy/migs/work
+          # Ambil DATABASE_URL dari Doppler STG dan jalankan Node via Docker
+          export DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN_STG }}
+          DBURL=$(doppler secrets get DATABASE_URL --plain --config stg --project crive)
+          docker run --rm \
+            -e DATABASE_URL="$DBURL" \
+            -v "$PWD":/work -w /work \
+            node:20-alpine node db/scripts/migrate.cjs up
+          EOSSH
 
   apply-production:
     needs: dry-run
@@ -57,11 +77,31 @@ jobs:
       url: https://api.crive.app/healthz
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: corepack enable
-      - run: pnpm i --frozen-lockfile --ignore-scripts
-      - name: Set DATABASE_URL (prd)
-        run: echo "DATABASE_URL=${{ secrets.PRD_DATABASE_URL }}" >> $GITHUB_ENV
-      - name: Migrate Up (production)
-        run: pnpm db:migrate:up
+
+      - name: Write SSH key
+        run: |
+          echo "${{ secrets.PRD_SSH_KEY_B64 }}" | base64 -d > id_prd
+          chmod 600 id_prd
+
+      - name: Package migrations
+        run: tar czf /tmp/migs.tgz db/scripts db/migrations
+
+      - name: Upload to server
+        run: |
+          rsync -e "ssh -i id_prd -o StrictHostKeyChecking=no" -avz /tmp/migs.tgz \
+            "${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }}:/deploy/migs/migs.tgz"
+
+      - name: Apply on server (PRD)
+        run: |
+          ssh -i id_prd -o StrictHostKeyChecking=no ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }} <<'EOSSH'
+          set -euo pipefail
+          mkdir -p /deploy/migs/work
+          tar xzf /deploy/migs/migs.tgz -C /deploy/migs/work
+          cd /deploy/migs/work
+          export DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN_PRD }}
+          DBURL=$(doppler secrets get DATABASE_URL --plain --config prd --project crive)
+          docker run --rm \
+            -e DATABASE_URL="$DBURL" \
+            -v "$PWD":/work -w /work \
+            node:20-alpine node db/scripts/migrate.cjs up
+          EOSSH
