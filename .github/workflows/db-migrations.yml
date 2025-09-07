@@ -39,34 +39,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Write SSH key
+      - name: Prepare SSH key
         run: |
+          test -n "${{ secrets.STG_SSH_KEY_B64 }}" || (echo "Missing STG_SSH_KEY_B64" && exit 1)
           echo "${{ secrets.STG_SSH_KEY_B64 }}" | base64 -d > id_stg
           chmod 600 id_stg
 
       - name: Package migrations
-        run: tar czf /tmp/migs.tgz db/scripts db/migrations
+        run: tar czf migs.tgz db/scripts db/migrations
 
-      - name: Upload to server
-        run: |
-          rsync -e "ssh -i id_stg -o StrictHostKeyChecking=no" -avz /tmp/migs.tgz \
-            "${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }}:/deploy/migs/migs.tgz"
+      - name: Create remote dir
+        run: ssh -i id_stg -o StrictHostKeyChecking=no ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }} 'mkdir -p /deploy/migs/work'
 
-      - name: Apply on server (STG)
+      - name: Upload package (SCP)
+        run: scp -i id_stg -o StrictHostKeyChecking=no migs.tgz ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }}:/deploy/migs/work/migs.tgz
+
+      - name: Apply migrations on STG (Dockerized Node)
         run: |
-          ssh -i id_stg -o StrictHostKeyChecking=no ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }} <<'EOSSH'
-          set -euo pipefail
-          mkdir -p /deploy/migs/work
-          tar xzf /deploy/migs/migs.tgz -C /deploy/migs/work
-          cd /deploy/migs/work
-          # Ambil DATABASE_URL dari Doppler STG dan jalankan Node via Docker
-          export DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN_STG }}
-          DBURL=$(doppler secrets get DATABASE_URL --plain --config stg --project crive)
-          docker run --rm \
-            -e DATABASE_URL="$DBURL" \
-            -v "$PWD":/work -w /work \
-            node:20-alpine node db/scripts/migrate.cjs up
-          EOSSH
+          ssh -i id_stg -o StrictHostKeyChecking=no ${{ secrets.STG_SSH_USER }}@${{ secrets.STG_SSH_HOST }} "
+            set -euo pipefail;
+            cd /deploy/migs/work;
+            tar xzf migs.tgz;
+            docker run --rm \
+              -e DATABASE_URL='${{ secrets.STG_DATABASE_URL }}' \
+              -v \$(pwd):/work -w /work \
+              node:20-alpine node db/scripts/migrate.cjs up
+          "
 
   apply-production:
     needs: dry-run
@@ -78,30 +76,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Write SSH key
+      - name: Prepare SSH key
         run: |
+          test -n "${{ secrets.PRD_SSH_KEY_B64 }}" || (echo "Missing PRD_SSH_KEY_B64" && exit 1)
           echo "${{ secrets.PRD_SSH_KEY_B64 }}" | base64 -d > id_prd
           chmod 600 id_prd
 
       - name: Package migrations
-        run: tar czf /tmp/migs.tgz db/scripts db/migrations
+        run: tar czf migs.tgz db/scripts db/migrations
 
-      - name: Upload to server
-        run: |
-          rsync -e "ssh -i id_prd -o StrictHostKeyChecking=no" -avz /tmp/migs.tgz \
-            "${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }}:/deploy/migs/migs.tgz"
+      - name: Create remote dir
+        run: ssh -i id_prd -o StrictHostKeyChecking=no ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }} 'mkdir -p /deploy/migs/work'
 
-      - name: Apply on server (PRD)
+      - name: Upload package (SCP)
+        run: scp -i id_prd -o StrictHostKeyChecking=no migs.tgz ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }}:/deploy/migs/work/migs.tgz
+
+      - name: Apply migrations on PRD (Dockerized Node)
         run: |
-          ssh -i id_prd -o StrictHostKeyChecking=no ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }} <<'EOSSH'
-          set -euo pipefail
-          mkdir -p /deploy/migs/work
-          tar xzf /deploy/migs/migs.tgz -C /deploy/migs/work
-          cd /deploy/migs/work
-          export DOPPLER_TOKEN=${{ secrets.DOPPLER_TOKEN_PRD }}
-          DBURL=$(doppler secrets get DATABASE_URL --plain --config prd --project crive)
-          docker run --rm \
-            -e DATABASE_URL="$DBURL" \
-            -v "$PWD":/work -w /work \
-            node:20-alpine node db/scripts/migrate.cjs up
-          EOSSH
+          ssh -i id_prd -o StrictHostKeyChecking=no ${{ secrets.PRD_SSH_USER }}@${{ secrets.PRD_SSH_HOST }} "
+            set -euo pipefail;
+            cd /deploy/migs/work;
+            tar xzf migs.tgz;
+            docker run --rm \
+              -e DATABASE_URL='${{ secrets.PRD_DATABASE_URL }}' \
+              -v \$(pwd):/work -w /work \
+              node:20-alpine node db/scripts/migrate.cjs up
+          "
