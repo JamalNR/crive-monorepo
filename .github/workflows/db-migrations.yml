@@ -1,0 +1,64 @@
+name: DB Migrations
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment (dev|stg|prd)"
+        required: true
+        default: "stg"
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+      - run: pnpm -v
+      - name: Set DATABASE_URL (dev) from Doppler
+        if: ${{ github.event.inputs.env == 'dev' }}
+        run: echo "DATABASE_URL=${{ secrets.DEV_DATABASE_URL }}" >> $GITHUB_ENV
+      - name: Set DATABASE_URL (stg) from Doppler
+        if: ${{ github.event.inputs.env == 'stg' }}
+        run: echo "DATABASE_URL=${{ secrets.STG_DATABASE_URL }}" >> $GITHUB_ENV
+      - name: Set DATABASE_URL (prd) from Doppler
+        if: ${{ github.event.inputs.env == 'prd' }}
+        run: echo "DATABASE_URL=${{ secrets.PRD_DATABASE_URL }}" >> $GITHUB_ENV
+      - name: Dry-run migrations
+        run: pnpm db:migrate:dry
+  apply-staging:
+    needs: dry-run
+    if: ${{ github.event.inputs.env == 'stg' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+      - name: Set DATABASE_URL (stg)
+        run: echo "DATABASE_URL=${{ secrets.STG_DATABASE_URL }}" >> $GITHUB_ENV
+      - name: Migrate Up (staging)
+        run: pnpm db:migrate:up
+  apply-production:
+    needs: dry-run
+    if: ${{ github.event.inputs.env == 'prd' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: prd
+      url: https://api.crive.app/healthz
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: corepack enable
+      - name: Set DATABASE_URL (prd)
+        run: echo "DATABASE_URL=${{ secrets.PRD_DATABASE_URL }}" >> $GITHUB_ENV
+      - name: Snapshot (pre-apply) — optional
+        run: echo "Run pg_dump or snapshot here"
+      - name: Manual approval gate
+        run: echo "Require environment approval in GitHub"
+      - name: Migrate Up (production)
+        run: pnpm db:migrate:up
