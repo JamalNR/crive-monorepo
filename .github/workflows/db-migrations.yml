@@ -11,15 +11,27 @@ on:
 jobs:
   dry-run:
     runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ci_migrate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d ci_migrate"
+          --health-interval=10s
+          --health-retries=30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - run: corepack enable
       - run: pnpm i --frozen-lockfile --ignore-scripts
-      - name: Set dummy DATABASE_URL (for parser only)
-        run: echo "DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/ci_migrate?sslmode=disable" >> "$GITHUB_ENV"
-      - name: Dry-run (no DB needed)
+      - name: Set DATABASE_URL (service)
+        run: echo "DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/ci_migrate" >> "$GITHUB_ENV"
+      - name: Dry-run with local PG
         run: pnpm db:migrate:dry
 
   apply-staging:
