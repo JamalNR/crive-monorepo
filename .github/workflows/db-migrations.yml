@@ -17,10 +17,9 @@ jobs:
         with: { node-version: 20 }
       - run: corepack enable
       - run: pnpm i --frozen-lockfile --ignore-scripts
+      - name: Set dummy DATABASE_URL (for parser only)
+        run: echo "DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/ci_migrate?sslmode=disable" >> "$GITHUB_ENV"
       - name: Dry-run (no DB needed)
-        env:
-          # cukup agar parser URL tidak error; tidak akan dipakai connect
-          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/ci_migrate?sslmode=disable
         run: pnpm db:migrate:dry
 
   apply-staging:
