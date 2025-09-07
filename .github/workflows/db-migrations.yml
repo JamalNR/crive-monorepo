@@ -54,91 +54,110 @@ jobs:
           echo "${{ secrets.STG_SSH_KEY_B64 }}" | base64 -d > id_stg
           chmod 600 id_stg
       - name: Package migrations
-        run: tar czf migs.tgz db/migrations db/scripts/migrate.cjs
-      - name: Upload package + env
+        run: tar czf migs.tgz db/migrations db/scripts/migrate.cjs/db/scripts/run_migs_remote.sh
+      - name: Upload package + env (STG)
+        env:
+          SSH_HOST: ${{ secrets.STG_SSH_HOST }}
+          SSH_USER: ${{ secrets.STG_SSH_USER }}
+          SSH_PORT: ${{ secrets.STG_SSH_PORT }}
+          DBURL:    ${{ secrets.STG_DATABASE_URL }}
+          NET:      ${{ secrets.STG_DOCKER_NETWORK }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          # siapkan direktori
           ssh -4 -p ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            "$SSH_USER@$SSH_HOST" 'mkdir -p ~/.crive-migs/work'
-          printf 'export DATABASE_URL=%q\n' "$DBURL" > env.remote
-          printf 'export DOCKER_NETWORK=%q\n' "${NET:-}" >> env.remote
+            "$SSH_USER@$SSH_HOST" 'mkdir -p ~/.crive-migs'
+          # tulis env.remote (quoted aman)
+          printf 'export DATABASE_URL=%q\n' "$DBURL"          >  env.remote
+          printf 'export DOCKER_NETWORK=%q\n' "${NET:-}"     >> env.remote
+          # upload
           scp -4 -P ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            env.remote migs.tgz "$SSH_USER@$SSH_HOST":~/.crive-migs/
+            migs.tgz env.remote "$SSH_USER@$SSH_HOST:~/.crive-migs/"
+
       - name: Apply migrations on STG
+        env:
+          SSH_HOST: ${{ secrets.STG_SSH_HOST }}
+          SSH_USER: ${{ secrets.STG_SSH_USER }}
+          SSH_PORT: ${{ secrets.STG_SSH_PORT }}
         shell: bash
         run: |
-          set -euo pipefail
-          ssh -4 -p ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" '
-            set -euo pipefail
-            cd ~/.crive-migs
-            . ./env.remote
-            cd work && tar xzf ../migs.tgz
-            if docker info >/dev/null 2>&1; then DOCKER=docker; else DOCKER="sudo -n docker"; fi
-            NET_ARG=""
-            if [ -n "${DOCKER_NETWORK:-}" ] && $DOCKER network ls --format "{{.Name}}" | grep -qx "$DOCKER_NETWORK"; then
-              NET_ARG="--network $DOCKER_NETWORK"
-            fi
-            $DOCKER run --rm $NET_ARG \
-              --add-host=host.docker.internal:host-gateway \
-              -e DATABASE_URL="$DATABASE_URL" \
-              -v "$PWD":/work -w /work node:20-bullseye bash -lc "
-                set -euo pipefail
-                npm i pg@8 --no-audit --no-fund --silent
-                node db/scripts/migrate.cjs status
-                node db/scripts/migrate.cjs up
-              "
-          '
+          set -Eeuo pipefail
+          ssh -4 -p ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+            "$SSH_USER@$SSH_HOST" '
+              set -Eeuo pipefail
+              cd ~/.crive-migs
+              . ./env.remote
+              mkdir -p work
+              cd work
+              tar xzf ../migs.tgz
+              bash db/scripts/run_migs_remote.sh
+            '
 
   apply-production:
     if: ${{ github.event.inputs.env == 'prd' }}
     needs: dry-run
     runs-on: ubuntu-latest
-    env:
-      SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
-      SSH_USER: ${{ secrets.PRD_SSH_USER }}
-      SSH_PORT: ${{ secrets.PRD_SSH_PORT }}
-      DBURL:   ${{ secrets.PRD_DATABASE_URL }}
-      NET:     ${{ secrets.PRD_DOCKER_NETWORK }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Preflight PRD secrets
+        shell: bash
+        run: |
+          test -n "${{ secrets.PRD_SSH_HOST }}"    &&
+          test -n "${{ secrets.PRD_SSH_USER }}"    &&
+          test -n "${{ secrets.PRD_SSH_PORT }}"    &&
+          test -n "${{ secrets.PRD_SSH_KEY_B64 }}" &&
+          test -n "${{ secrets.PRD_DATABASE_URL }}" || { echo "Missing one of PRD_* secrets"; exit 2; }
+
       - name: Prepare SSH key (PRD)
+        shell: bash
         run: |
           echo "${{ secrets.PRD_SSH_KEY_B64 }}" | base64 -d > id_prd
           chmod 600 id_prd
+        
       - name: Package migrations
-        run: tar czf migs.tgz db/migrations db/scripts/migrate.cjs
-      - name: Upload package + env
         shell: bash
         run: |
-          set -euo pipefail
-          ssh -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            "$SSH_USER@$SSH_HOST" 'mkdir -p ~/.crive-migs/work'
-          printf 'export DATABASE_URL=%q\n' "$DBURL" > env.remote
+          tar czf migs.tgz \
+            db/migrations \
+            db/scripts/migrate.cjs \
+            db/scripts/run_migs_remote.sh
+        
+      - name: Upload package + env (PRD)
+        env:
+          SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
+          SSH_USER: ${{ secrets.PRD_SSH_USER }}
+          SSH_PORT: ${{ secrets.PRD_SSH_PORT }}
+          DBURL:    ${{ secrets.PRD_DATABASE_URL }}
+          NET:      ${{ secrets.PRD_DOCKER_NETWORK }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # siapkan dir + kirim env
+          ssh  -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+            "$SSH_USER@$SSH_HOST" 'mkdir -p ~/.crive-migs'
+          printf 'export DATABASE_URL=%q\n' "$DBURL"      >  env.remote
           printf 'export DOCKER_NETWORK=%q\n' "${NET:-}" >> env.remote
-          scp -4 -P ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            env.remote migs.tgz "$SSH_USER@$SSH_HOST":~/.crive-migs/
+          # upload paket & env
+          scp  -4 -P ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+            migs.tgz env.remote "$SSH_USER@$SSH_HOST:~/.crive-migs/"
+        
       - name: Apply migrations on PRD
+        env:
+          SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
+          SSH_USER: ${{ secrets.PRD_SSH_USER }}
+          SSH_PORT: ${{ secrets.PRD_SSH_PORT }}
         shell: bash
         run: |
-          set -euo pipefail
-          ssh -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" '
-            set -euo pipefail
-            cd ~/.crive-migs
-            . ./env.remote
-            cd work && tar xzf ../migs.tgz
-            if docker info >/dev/null 2>&1; then DOCKER=docker; else DOCKER="sudo -n docker"; fi
-            NET_ARG=""
-            if [ -n "${DOCKER_NETWORK:-}" ] && $DOCKER network ls --format "{{.Name}}" | grep -qx "$DOCKER_NETWORK"; then
-              NET_ARG="--network $DOCKER_NETWORK"
-            fi
-            $DOCKER run --rm $NET_ARG \
-              --add-host=host.docker.internal:host-gateway \
-              -e DATABASE_URL="$DATABASE_URL" \
-              -v "$PWD":/work -w /work node:20-bullseye bash -lc "
-                set -euo pipefail
-                npm i pg@8 --no-audit --no-fund --silent
-                node db/scripts/migrate.cjs status
-                node db/scripts/migrate.cjs up
-              "
-          '
+          set -Eeuo pipefail
+          ssh  -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+            "$SSH_USER@$SSH_HOST" '
+              set -Eeuo pipefail
+              cd ~/.crive-migs
+              . ./env.remote
+              mkdir -p work
+              cd work
+              tar xzf ../migs.tgz
+              bash db/scripts/run_migs_remote.sh
+            '
