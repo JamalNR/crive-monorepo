@@ -18,16 +18,14 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: ci_migrate
-        ports:
-          - "5432:5432"
+        ports: ["5432:5432"]
         options: >-
           --health-cmd="pg_isready -U postgres -d ci_migrate"
           --health-interval=10s --health-retries=30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
+        with: { node-version: 20 }
       - run: corepack enable
       - run: pnpm i --frozen-lockfile --ignore-scripts
       - name: Set DATABASE_URL (service)
@@ -71,11 +69,16 @@ jobs:
           NET:      ${{ secrets.STG_DOCKER_NETWORK }}
         run: |
           set -euo pipefail
-          printf 'DATABASE_URL=%s\nDOCKER_NETWORK=%s\n' "${DBURL}" "${NET}" > env.remote
+          # buat env.remote (DI RUNNER), tidak di-source lokal
+          cat > env.remote <<EOF
+export DATABASE_URL="${DBURL}"
+export DOCKER_NETWORK="${NET}"
+EOF
           scp -4 -P ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             env.remote "$SSH_USER@$SSH_HOST":~/.crive-migs/env.remote
+          # eksekusi di server, source env.remote baru jalankan script
           ssh  -4 -p ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            "$SSH_USER@$SSH_HOST" 'cd ~/.crive-migs/work && tar xzf migs.tgz && source ../env.remote && bash db/scripts/run_migs_remote.sh'
+            "$SSH_USER@$SSH_HOST" 'set -euo pipefail; cd ~/.crive-migs/work; tar xzf migs.tgz; source ../env.remote; bash db/scripts/run_migs_remote.sh'
 
   apply-production:
     if: ${{ github.event.inputs.env == 'prd' }}
@@ -115,8 +118,11 @@ jobs:
           NET:      ${{ secrets.PRD_DOCKER_NETWORK }}
         run: |
           set -euo pipefail
-          printf 'DATABASE_URL=%s\nDOCKER_NETWORK=%s\n' "${DBURL}" "${NET}" > env.remote
+          cat > env.remote <<EOF
+export DATABASE_URL="${DBURL}"
+export DOCKER_NETWORK="${NET}"
+EOF
           scp -4 -P ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             env.remote "$SSH_USER@$SSH_HOST":~/.crive-migs/env.remote
           ssh  -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            "$SSH_USER@$SSH_HOST" 'cd ~/.crive-migs/work && tar xzf migs.tgz && source ../env.remote && bash db/scripts/run_migs_remote.sh'
+            "$SSH_USER@$SSH_HOST" 'set -euo pipefail; cd ~/.crive-migs/work; tar xzf migs.tgz; source ../env.remote; bash db/scripts/run_migs_remote.sh'
