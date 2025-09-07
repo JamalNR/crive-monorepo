@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       env:
-        description: "Target environment"
-        required: true
+        description: Target environment
         type: choice
+        required: true
         options: [stg, prd]
 
 jobs:
@@ -53,8 +53,7 @@ jobs:
           chmod 600 id_stg
 
       - name: Package migrations
-        run: |
-          tar czf migs.tgz db/migrations db/scripts/migrate.cjs
+        run: tar czf migs.tgz db/migrations db/scripts/migrate.cjs
 
       - name: Upload package (SCP)
         env:
@@ -62,9 +61,9 @@ jobs:
           SSH_USER: ${{ secrets.STG_SSH_USER }}
           SSH_PORT: ${{ secrets.STG_SSH_PORT }}
         run: |
-          ssh -4 -p ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+          ssh  -4 -p ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             "$SSH_USER@$SSH_HOST" 'mkdir -p ~/.crive-migs/work'
-          scp -4 -P ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+          scp  -4 -P ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             migs.tgz "$SSH_USER@$SSH_HOST":~/.crive-migs/work/migs.tgz
 
       - name: Apply migrations on STG
@@ -77,12 +76,11 @@ jobs:
           NET:      ${{ secrets.STG_DOCKER_NETWORK }}
         run: |
           set -euo pipefail
-          cat > env.remote <<EOF
-DATABASE_URL=${DBURL}
-DOCKER_NETWORK=${NET}
-EOF
+          # tulis env.remote tanpa heredoc
+          printf 'DATABASE_URL=%s\nDOCKER_NETWORK=%s\n' "${DBURL}" "${NET}" > env.remote
 
-          cat > run_migs.sh <<'BASH'
+          # siapkan runner script di mesin runner
+          cat <<'BASH' > run_migs.sh
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p "$HOME/.crive-migs/work"
@@ -103,9 +101,12 @@ $DOCKER run --rm $NET_ARG \
 BASH
           chmod +x run_migs.sh
 
+          # upload env & script
           scp -4 -P ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             env.remote run_migs.sh "${SSH_USER}@${SSH_HOST}":~/.crive-migs/
-          ssh -4 -p ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+
+          # eksekusi di server
+          ssh  -4 -p ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             "${SSH_USER}@${SSH_HOST}" 'source ~/.crive-migs/env.remote && bash ~/.crive-migs/run_migs.sh'
 
   apply-production:
@@ -129,8 +130,7 @@ BASH
           chmod 600 id_prd
 
       - name: Package migrations
-        run: |
-          tar czf migs.tgz db/migrations db/scripts/migrate.cjs
+        run: tar czf migs.tgz db/migrations db/scripts/migrate.cjs
 
       - name: Upload package (SCP)
         env:
@@ -138,9 +138,9 @@ BASH
           SSH_USER: ${{ secrets.PRD_SSH_USER }}
           SSH_PORT: ${{ secrets.PRD_SSH_PORT }}
         run: |
-          ssh -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+          ssh  -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             "$SSH_USER@$SSH_HOST" 'mkdir -p ~/.crive-migs/work'
-          scp -4 -P ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+          scp  -4 -P ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             migs.tgz "$SSH_USER@$SSH_HOST":~/.crive-migs/work/migs.tgz
 
       - name: Apply migrations on PRD
@@ -153,11 +153,9 @@ BASH
           NET:      ${{ secrets.PRD_DOCKER_NETWORK }}
         run: |
           set -euo pipefail
-          cat > env.remote <<EOF
-DATABASE_URL=${DBURL}
-DOCKER_NETWORK=${NET}
-EOF
-cat > run_migs.sh <<'BASH'
+          printf 'DATABASE_URL=%s\nDOCKER_NETWORK=%s\n' "${DBURL}" "${NET}" > env.remote
+
+          cat <<'BASH' > run_migs.sh
 #!/usr/bin/env bash
 set -euo pipefail
 mkdir -p "$HOME/.crive-migs/work"
@@ -180,5 +178,5 @@ BASH
 
           scp -4 -P ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             env.remote run_migs.sh "${SSH_USER}@${SSH_HOST}":~/.crive-migs/
-          ssh -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
+          ssh  -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
             "${SSH_USER}@${SSH_HOST}" 'source ~/.crive-migs/env.remote && bash ~/.crive-migs/run_migs.sh'
