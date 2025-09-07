@@ -34,48 +34,41 @@ jobs:
       - name: Dry-run with local PG
         run: pnpm db:migrate:dry
 
-  apply-staging:
-    if: ${{ github.event.inputs.env == 'stg' }}
-    needs: dry-run
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prepare SSH key (STG)
-        run: |
-          echo "${{ secrets.STG_SSH_KEY_B64 }}" | base64 -d > id_stg
-          chmod 600 id_stg
-      - name: Package migrations
-        run: tar czf migs.tgz db/migrations db/scripts/migrate.cjs db/scripts/run_migs_remote.sh
-      - name: Upload & run on STG
-        env:
-          HOST: ${{ secrets.STG_SSH_HOST }}
-          USER: ${{ secrets.STG_SSH_USER }}
-          PORT: ${{ secrets.STG_SSH_PORT }}
-        run: |
-          set -euo pipefail
-          ssh -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -p "${PORT:-22}" "$USER@$HOST" 'mkdir -p ~/.crive-migs/work'
-          scp -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -P "${PORT:-22}" migs.tgz "$USER@$HOST:~/.crive-migs/work/migs.tgz"
-          ssh -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -p "${PORT:-22}" "$USER@$HOST" 'cd ~/.crive-migs/work && tar xzf migs.tgz && bash db/scripts/run_migs_remote.sh'
+  - name: Upload & run on STG
+    env:
+      HOST: ${{ secrets.STG_SSH_HOST }}
+      USER: ${{ secrets.STG_SSH_USER }}
+      PORT: ${{ secrets.STG_SSH_PORT }}
+      DBURL: ${{ secrets.STG_DATABASE_URL }}
+      NET:   ${{ secrets.STG_DOCKER_NETWORK }}
+    run: |
+      set -euo pipefail
+      # tulis env untuk server (DIQUOTE AMAN)
+      printf 'export DATABASE_URL=%q\n' "$DBURL" > env.remote
+      printf 'export DOCKER_NETWORK=%q\n' "${NET:-}" >> env.remote
 
-  apply-production:
-    if: ${{ github.event.inputs.env == 'prd' }}
-    needs: dry-run
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prepare SSH key (PRD)
-        run: |
-          echo "${{ secrets.PRD_SSH_KEY_B64 }}" | base64 -d > id_prd
-          chmod 600 id_prd
-      - name: Package migrations
-        run: tar czf migs.tgz db/migrations db/scripts/migrate.cjs db/scripts/run_migs_remote.sh
-      - name: Upload & run on PRD
-        env:
-          HOST: ${{ secrets.PRD_SSH_HOST }}
-          USER: ${{ secrets.PRD_SSH_USER }}
-          PORT: ${{ secrets.PRD_SSH_PORT }}
-        run: |
-          set -euo pipefail
-          ssh -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -p "${PORT:-22}" "$USER@$HOST" 'mkdir -p ~/.crive-migs/work'
-          scp -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -P "${PORT:-22}" migs.tgz "$USER@$HOST:~/.crive-migs/work/migs.tgz"
-          ssh -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -p "${PORT:-22}" "$USER@$HOST" 'cd ~/.crive-migs/work && tar xzf migs.tgz && bash db/scripts/run_migs_remote.sh'
+      # pastikan folder ada + upload file
+      ssh  -4 -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -p "${PORT:-22}" "$USER@$HOST" 'mkdir -p ~/.crive-migs/work'
+      scp  -4 -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -P "${PORT:-22}" env.remote migs.tgz "$USER@$HOST:~/.crive-migs/work/"
+
+      # jalankan di server (source env.remote dulu)
+      ssh  -4 -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -p "${PORT:-22}" "$USER@$HOST" \
+        'set -euo pipefail; cd ~/.crive-migs/work; tar xzf migs.tgz; source env.remote; bash db/scripts/run_migs_remote.sh'
+
+    - name: Upload & run on PRD
+      env:
+        HOST: ${{ secrets.PRD_SSH_HOST }}
+        USER: ${{ secrets.PRD_SSH_USER }}
+        PORT: ${{ secrets.PRD_SSH_PORT }}
+        DBURL: ${{ secrets.PRD_DATABASE_URL }}
+        NET:   ${{ secrets.PRD_DOCKER_NETWORK }}
+      run: |
+        set -euo pipefail
+        printf 'export DATABASE_URL=%q\n' "$DBURL" > env.remote
+        printf 'export DOCKER_NETWORK=%q\n' "${NET:-}" >> env.remote
+
+        ssh  -4 -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -p "${PORT:-22}" "$USER@$HOST" 'mkdir -p ~/.crive-migs/work'
+        scp  -4 -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -P "${PORT:-22}" env.remote migs.tgz "$USER@$HOST:~/.crive-migs/work/"
+
+        ssh  -4 -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -p "${PORT:-22}" "$USER@$HOST" \
+          'set -euo pipefail; cd ~/.crive-migs/work; tar xzf migs.tgz; source env.remote; bash db/scripts/run_migs_remote.sh'
