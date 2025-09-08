@@ -19,6 +19,8 @@ jobs:
       TARGET: ${{ github.event.inputs.target }}
       HOST: ${{ github.event.inputs.target == 'stg' && secrets.STG_HOST || secrets.PRD_HOST }}
       SSH_KEY_B64: ${{ github.event.inputs.target == 'stg' && secrets.STG_SSH_KEY_B64 || secrets.PRD_SSH_KEY_B64 }}
+      # >>> FIX PENTING: pastikan DATABASE_URL tersedia di runner sejak awal
+      DATABASE_URL: ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL || secrets.PRD_DATABASE_URL }}
 
       # <<< PENTING: DATABASE_URL selalu terisi dari Secrets GitHub >>>
       DATABASE_URL: ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL || secrets.PRD_DATABASE_URL }}
@@ -35,6 +37,14 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
 
+      # (Opsional) Tetap load env lain via Doppler jika dibutuhkan,
+      # tapi kita TIDAK bergantung ke Doppler untuk DATABASE_URL.
+      - name: Load env from Doppler (optional)
+        uses: dopplerhq/cli-action@v3
+        if: ${{ always() }}  # tidak memblokir bila tak dipakai
+        with:
+          token: ${{ secrets.DOPPLER_TOKEN_STG || secrets.DOPPLER_TOKEN_PRD }}
+          args: doppler --version
       # Install hanya CLI Doppler (action ini TIDAK menerima 'with:')
       - name: Install Doppler CLI
         uses: dopplerhq/cli-action@v3
@@ -66,6 +76,44 @@ jobs:
       - name: Upload package
         run: |
           set -euo pipefail
+
+          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
+
+      - name: Apply SQL (psql via Docker network on server)
+        run: |
+          set -euo pipefail
+          # Pastikan DATABASE_URL ada sejak awal; beri pesan jelas jika tidak
+          : "${DATABASE_URL:?GITHUB secret DATABASE_URL tidak tersedia}"
+
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "\
+            set -euo pipefail; \
+            cd /deploy/migs && tar -xzf migs.tar.gz || true; \
+            command -v docker >/dev/null 2>&1 || (echo 'docker tidak ada di server' && exit 1); \
+            # 1) cari container postgres & networknya
+            PG_CONT=\$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print \$1; exit}'); \
+            [ -z \"\$PG_CONT\" ] && echo 'Postgres container tidak ditemukan' && exit 2; \
+            NET=\$(docker inspect -f '{{range \$k,\$v := .NetworkSettings.Networks}}{{printf \"%s\" \$k}}{{end}}' \"\$PG_CONT\"); \
+            [ -z \"\$NET\" ] && echo 'Network docker tidak ditemukan' && exit 3; \
+            # 2) siapkan URL untuk akses lewat network docker (host=container name) & non-SSL (local)
+            DB_URL=\"\${DATABASE_URL//sslmode=require/sslmode=disable}\"; \
+            DB_URL=\"\${DB_URL//@db:/@\${PG_CONT}:}\"; \
+            echo '[preflight] select 1'; \
+            docker run --rm --network \"\$NET\" -e DATABASE_URL=\"\$DB_URL\" \
+              -v /deploy/migs/sql:/work/sql:ro postgres:16-alpine \
+              sh -lc 'set -e; \
+                      psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"select 1\"; \
+                      if ls /work/sql/up/*.sql >/dev/null 2>&1; then \
+                        for f in \$(ls -1 /work/sql/up/*.sql | sort); do \
+                          echo \"[apply] \$f\"; \
+                          psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"\$f\"; \
+                        done; \
+                      elif [ -f /work/sql/up.sql ]; then \
+                        echo \"[apply] /work/sql/up.sql\"; \
+                        psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f /work/sql/up.sql; \
+                      else \
+                        echo \"[apply] tidak ada sql/up\"; \
+                      fi' \
+          "
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
 
       # Apply SQL di server via docker network Postgres (host 'db' hanya resolve di network Docker)
