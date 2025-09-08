@@ -25,14 +25,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Doppler & psql
+      # psql di runner (boleh sudo)
+      - name: Install psql
         run: |
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
 
-      - name: Install Doppler CLI
+      # Ambil secrets via Doppler (action resmi) -> persist ke $GITHUB_ENV
+      - name: Load env from Doppler
         uses: dopplerhq/cli-action@v3
+        with:
+          doppler-token: ${{ env.DOPPLER_TOKEN }}
+          command: |
+            doppler secrets download --no-file --format env \
+              --project crive --config ${{ env.DOPPLER_CONFIG }} >> "$GITHUB_ENV"
 
+      # Siapkan SSH
       - name: Prepare SSH
         run: |
           set -euo pipefail
@@ -41,40 +49,40 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
 
+      # Paketkan SQL
       - name: Package SQL
         run: |
           set -euo pipefail
-          tar -czf migs.tar.gz sql
+          tar -czf migs.tar.gz sql || true
+          ls -lah migs.tar.gz
 
+      # Upload paket
       - name: Upload package
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
 
-      - name: Apply SQL (pure psql)
+      # Apply SQL di server; inject DATABASE_URL dari runner (tanpa doppler di server)
+      - name: Apply SQL (pure psql via env)
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "\
             set -euo pipefail; \
-            cd /deploy/migs && tar -xzf migs.tar.gz; \
-            command -v doppler >/dev/null 2>&1 || curl -Ls https://cli.doppler.com/install.sh | sudo sh; \
-            export DOPPLER_TOKEN='${DOPPLER_TOKEN}'; \
-            doppler run --project crive --config ${DOPPLER_CONFIG} -- bash -lc '\
-              set -euo pipefail; \
-              : \${DATABASE_URL:?DATABASE_URL missing}; \
-              echo \"[preflight] cek koneksi\"; \
-              PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"select 1\" >/dev/null; \
-              if ls sql/up/*.sql >/dev/null 2>&1; then \
-                for f in \$(ls -1 sql/up/*.sql | sort); do \
-                  echo \"[apply] \$f\"; \
-                  PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"\$f\"; \
-                done; \
-              elif [ -f sql/up.sql ]; then \
-                echo \"[apply] sql/up.sql\"; \
-                PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f sql/up.sql; \
-              else \
-                echo \"[apply] tidak ada sql/up\"; \
-              fi \
-            ' \
+            cd /deploy/migs && tar -xzf migs.tar.gz || true; \
+            command -v psql >/dev/null 2>&1 || (sudo apt-get update -y && sudo apt-get install -y postgresql-client); \
+            export DATABASE_URL='${{ env.DATABASE_URL }}'; \
+            echo '[preflight] select 1'; \
+            PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -c 'select 1'; \
+            if ls sql/up/*.sql >/dev/null 2>&1; then \
+              for f in \$(ls -1 sql/up/*.sql | sort); do \
+                echo \"[apply] \$f\"; \
+                PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"\$f\"; \
+              done; \
+            elif [ -f sql/up.sql ]; then \
+              echo '[apply] sql/up.sql'; \
+              PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f sql/up.sql; \
+            else \
+              echo '[apply] tidak ada sql/up'; \
+            fi \
           "
