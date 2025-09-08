@@ -2,157 +2,118 @@ name: DB Migrations
 
 on:
   workflow_dispatch:
-    inputs:
-      env:
-        description: "Target environment"
-        required: true
-        type: choice
-        options: [stg, prd]
+
+permissions:
+  contents: read
 
 jobs:
-  dry-run:
-    runs-on: ubuntu-latest
-    services:
-      db:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: ci_migrate
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd="pg_isready -U postgres -d ci_migrate"
-          --health-interval=10s
-          --health-retries=30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - name: corepack enable
-        run: corepack enable
-      - name: pnpm i --frozen-lockfile --ignore-scripts
-        shell: bash
-        run: pnpm i --frozen-lockfile --ignore-scripts
-      - name: Set dummy DATABASE_URL (service)
-        shell: bash
-        run: echo "DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/ci_migrate" >> "$GITHUB_ENV"
-      - name: Dry-run (no changes)
-        shell: bash
-        run: pnpm db:migrate:dry
-
-  apply-staging:
-    if: ${{ github.event.inputs.env == 'stg' }}
-    needs: dry-run
+  staging:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preflight STG secrets
-        shell: bash
+      - name: Install Doppler & psql
         run: |
-          set -euo pipefail
-          test -n "${{ secrets.STG_SSH_HOST }}" &&
-          test -n "${{ secrets.STG_SSH_USER }}" &&
-          test -n "${{ secrets.STG_SSH_KEY_B64 }}" &&
-          test -n "${{ secrets.STG_DATABASE_URL }}" || { echo "Missing one of STG_* secrets"; exit 2; }
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+          curl -Ls https://cli.doppler.com/install.sh | sh
 
-      - name: Prepare SSH key (STG)
-        shell: bash
-        run: |
-          echo "${{ secrets.STG_SSH_KEY_B64 }}" | base64 -d > id_stg
-          chmod 600 id_stg
-
-      - name: Package migrations
-        shell: bash
-        run: |
-          set -euo pipefail
-          tar czf migs.tgz db/migrations db/scripts/migrate.cjs db/scripts/run_migs_remote.sh
-
-      - name: Upload package + env (STG)
+      - name: Upload SQL
         env:
-          SSH_HOST: ${{ secrets.STG_SSH_HOST }}
-          SSH_USER: ${{ secrets.STG_SSH_USER }}
-          SSH_PORT: ${{ secrets.STG_SSH_PORT }}
-          DBURL:     ${{ secrets.STG_DATABASE_URL }}
-          NET:       ${{ secrets.STG_DOCKER_NETWORK }}
-        shell: bash
+          STG_HOST: ${{ secrets.STG_HOST }}
+          STG_SSH_KEY_B64: ${{ secrets.STG_SSH_KEY_B64 }}
         run: |
           set -euo pipefail
-          ssh  -4 -p ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            "$SSH_USER@$SSH_HOST" 'mkdir -p ~/.crive-migs/work'
-          scp  -4 -P ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            migs.tgz "$SSH_USER@$SSH_HOST":~/.crive-migs/work/migs.tgz
-          # tulis env.remote DI RUNNER lalu copy
-          printf 'export DATABASE_URL=%q\n' "$DBURL" > env.remote
-          printf 'export DOCKER_NETWORK=%q\n' "${NET:-}" >> env.remote
-          scp  -4 -P ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            env.remote "$SSH_USER@$SSH_HOST":~/.crive-migs/env.remote
+          mkdir -p ~/.ssh
+          echo "$STG_SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$STG_HOST" >> ~/.ssh/known_hosts
+          ssh -o StrictHostKeyChecking=yes deploy@"$STG_HOST" 'mkdir -p /deploy/migs'
+          tar -czf migs.tar.gz sql
+          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$STG_HOST":/deploy/migs/migs.tar.gz
 
-      - name: Apply migrations on STG
+      - name: Run migrations on STG (SQL only)
         env:
-          SSH_HOST: ${{ secrets.STG_SSH_HOST }}
-          SSH_USER: ${{ secrets.STG_SSH_USER }}
-          SSH_PORT: ${{ secrets.STG_SSH_PORT }}
-        shell: bash
+          STG_HOST: ${{ secrets.STG_HOST }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_STG }}
         run: |
           set -euo pipefail
-          ssh  -4 -p ${SSH_PORT:-22} -i id_stg -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            "$SSH_USER@$SSH_HOST" 'set -euo pipefail; cd ~/.crive-migs/work; tar xzf migs.tgz; . ../env.remote; bash db/scripts/run_migs_remote.sh'
+          ssh -o StrictHostKeyChecking=yes deploy@"$STG_HOST" "
+            set -euo pipefail
+            cd /deploy/migs && tar -xzf migs.tar.gz
+            command -v doppler >/dev/null 2>&1 || curl -Ls https://cli.doppler.com/install.sh | sudo sh
+            export DOPPLER_TOKEN='${DOPPLER_TOKEN}'
+            doppler run --project crive --config stg -- bash -lc '
+              set -euo pipefail
+              : \${DATABASE_URL:?DATABASE_URL missing}
+              echo \"[preflight] cek koneksi\"
+              PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"select 1\"
+              if ls sql/up/*.sql >/dev/null 2>&1; then
+                for f in \$(ls -1 sql/up/*.sql | sort); do
+                  echo \"[apply] \$f\"
+                  PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"\$f\"
+                done
+              elif [ -f sql/up.sql ]; then
+                echo \"[apply] sql/up.sql\"
+                PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f sql/up.sql
+              else
+                echo \"[apply] tidak ada sql/up\"
+              fi
+            '
+          "
 
-  apply-production:
-    if: ${{ github.event.inputs.env == 'prd' }}
-    needs: dry-run
+  production:
     runs-on: ubuntu-latest
+    needs: staging
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preflight PRD secrets
-        shell: bash
+      - name: Install Doppler & psql
         run: |
-          set -euo pipefail
-          test -n "${{ secrets.PRD_SSH_HOST }}" &&
-          test -n "${{ secrets.PRD_SSH_USER }}" &&
-          test -n "${{ secrets.PRD_SSH_KEY_B64 }}" &&
-          test -n "${{ secrets.PRD_DATABASE_URL }}" || { echo "Missing one of PRD_* secrets"; exit 2; }
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+          curl -Ls https://cli.doppler.com/install.sh | sh
 
-      - name: Prepare SSH key (PRD)
-        shell: bash
-        run: |
-          echo "${{ secrets.PRD_SSH_KEY_B64 }}" | base64 -d > id_prd
-          chmod 600 id_prd
-
-      - name: Package migrations
-        shell: bash
-        run: |
-          set -euo pipefail
-          tar czf migs.tgz db/migrations db/scripts/migrate.cjs db/scripts/run_migs_remote.sh
-
-      - name: Upload package + env (PRD)
+      - name: Upload SQL
         env:
-          SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
-          SSH_USER: ${{ secrets.PRD_SSH_USER }}
-          SSH_PORT: ${{ secrets.PRD_SSH_PORT }}
-          DBURL:    ${{ secrets.PRD_DATABASE_URL }}
-          NET:      ${{ secrets.PRD_DOCKER_NETWORK }}
-        shell: bash
+          PRD_HOST: ${{ secrets.PRD_HOST }}
+          PRD_SSH_KEY_B64: ${{ secrets.PRD_SSH_KEY_B64 }}
         run: |
           set -euo pipefail
-          ssh  -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            "$SSH_USER@$SSH_HOST" 'mkdir -p ~/.crive-migs/work'
-          scp  -4 -P ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            migs.tgz "$SSH_USER@$SSH_HOST":~/.crive-migs/work/migs.tgz
-          printf 'export DATABASE_URL=%q\n' "$DBURL" > env.remote
-          printf 'export DOCKER_NETWORK=%q\n' "${NET:-}" >> env.remote
-          scp  -4 -P ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            env.remote "$SSH_USER@$SSH_HOST":~/.crive-migs/env.remote
+          mkdir -p ~/.ssh
+          echo "$PRD_SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$PRD_HOST" >> ~/.ssh/known_hosts
+          ssh -o StrictHostKeyChecking=yes deploy@"$PRD_HOST" 'mkdir -p /deploy/migs'
+          tar -czf migs.tar.gz sql
+          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$PRD_HOST":/deploy/migs/migs.tar.gz
 
-      - name: Apply migrations on PRD
+      - name: Run migrations on PRD (SQL only)
         env:
-          SSH_HOST: ${{ secrets.PRD_SSH_HOST }}
-          SSH_USER: ${{ secrets.PRD_SSH_USER }}
-          SSH_PORT: ${{ secrets.PRD_SSH_PORT }}
-        shell: bash
+          PRD_HOST: ${{ secrets.PRD_HOST }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_PRD }}
         run: |
           set -euo pipefail
-          ssh  -4 -p ${SSH_PORT:-22} -i id_prd -o IdentitiesOnly=yes -o StrictHostKeyChecking=no \
-            "$SSH_USER@$SSH_HOST" 'set -euo pipefail; cd ~/.crive-migs/work; tar xzf migs.tgz; . ../env.remote; bash db/scripts/run_migs_remote.sh'
+          ssh -o StrictHostKeyChecking=yes deploy@"$PRD_HOST" "
+            set -euo pipefail
+            cd /deploy/migs && tar -xzf migs.tar.gz
+            command -v doppler >/dev/null 2>&1 || curl -Ls https://cli.doppler.com/install.sh | sudo sh
+            export DOPPLER_TOKEN='${DOPPLER_TOKEN}'
+            doppler run --project crive --config prd -- bash -lc '
+              set -euo pipefail
+              : \${DATABASE_URL:?DATABASE_URL missing}
+              echo \"[preflight] cek koneksi\"
+              PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"select 1\"
+              if ls sql/up/*.sql >/dev/null 2>&1; then
+                for f in \$(ls -1 sql/up/*.sql | sort); do
+                  echo \"[apply] \$f\"
+                  PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"\$f\"
+                done
+              elif [ -f sql/up.sql ]; then
+                echo \"[apply] sql/up.sql\"
+                PGSSLMODE=require psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f sql/up.sql
+              else
+                echo \"[apply] tidak ada sql/up\"
+              fi
+            '
+          "
