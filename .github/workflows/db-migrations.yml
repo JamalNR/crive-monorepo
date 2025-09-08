@@ -17,10 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TARGET: ${{ github.event.inputs.target }}
-      HOST: ${{ github.event.inputs.target == 'stg' && secrets.STG_HOST || secrets.PRD_HOST }}
-      SSH_KEY_B64: ${{ github.event.inputs.target == 'stg' && secrets.STG_SSH_KEY_B64 || secrets.PRD_SSH_KEY_B64 }}
-      DOPPLER_TOKEN: ${{ github.event.inputs.target == 'stg' && secrets.DOPPLER_TOKEN_STG || secrets.DOPPLER_TOKEN_PRD }}
-      DOPPLER_CONFIG: ${{ github.event.inputs.target == 'stg' && 'stg' || 'prd' }}
+      # Ambil variabel dari GitHub Secrets (BUKAN dari Doppler)
+      HOST:          ${{ github.event.inputs.target == 'stg' && secrets.STG_HOST          || secrets.PRD_HOST }}
+      SSH_USER:      ${{ github.event.inputs.target == 'stg' && secrets.STG_SSH_USER      || secrets.PRD_SSH_USER }}
+      SSH_KEY_B64:   ${{ github.event.inputs.target == 'stg' && secrets.STG_SSH_KEY_B64   || secrets.PRD_SSH_KEY_B64 }}
+      DATABASE_URL:  ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL  || secrets.PRD_DATABASE_URL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -29,14 +30,6 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
-
-      - name: Load env from Doppler
-        uses: dopplerhq/cli-action@v3
-        with:
-          doppler-token: ${{ env.DOPPLER_TOKEN }}
-          command: |
-            doppler secrets download --no-file --format env \
-              --project crive --config ${{ env.DOPPLER_CONFIG }} >> "$GITHUB_ENV"
 
       - name: Prepare SSH
         run: |
@@ -55,41 +48,39 @@ jobs:
       - name: Upload package
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
-          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
+          ssh -o StrictHostKeyChecking=yes $SSH_USER@"$HOST" 'mkdir -p /deploy/migs'
+          scp -o StrictHostKeyChecking=yes migs.tar.gz $SSH_USER@"$HOST":/deploy/migs/migs.tar.gz
 
-      # 🔧 Perbaikan utama: jalankan psql di container yang join ke Docker network yang sama dengan Postgres (host 'db')
-      - name: Apply SQL (via docker network)
+      - name: Apply SQL (psql via docker network on server)
+        env:
+          # kirim DATABASE_URL ke remote
+          DATABASE_URL: ${{ env.DATABASE_URL }}
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "\
+          ssh -o StrictHostKeyChecking=yes $SSH_USER@"$HOST" "\
             set -euo pipefail; \
             cd /deploy/migs && tar -xzf migs.tar.gz || true; \
-            # DATABASE_URL dari Doppler; nonaktifkan SSL karena intra-network
-            DB_URL='${{ env.DATABASE_URL }}'; \
-            DB_URL=\${DB_URL//sslmode=require/sslmode=disable}; \
-            # cari nama container Postgres pertama yang expose 5432
+            # siapkan URL: matikan SSL untuk koneksi intra-network
+            DB_URL=\"\${DATABASE_URL//sslmode=require/sslmode=disable}\"; \
+            # cari kontainer postgres & network-nya
             PG_CONT=\$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print \$1; exit}'); \
-            # ambil nama network Docker dari container tersebut
-            NET=\$(docker inspect -f '{{range \$k,\$v := .NetworkSettings.Networks}}{{printf \"%s\" \$k}}{{end}}' \"\${PG_CONT}\"); \
-            echo \"[preflight] network=\$NET pg_cont=\$PG_CONT\"; \
-            # jalankan psql di container postgres yang join ke network itu
+            NET=\$(docker inspect -f '{{range \$k,\$v := .NetworkSettings.Networks}}{{printf \"%s\" \$k}}{{end}}' \"\$PG_CONT\"); \
+            # jalankan psql dari kontainer postgres:16 di network yang sama
             docker run --rm --network \"\$NET\" \
               -e DATABASE_URL=\"\$DB_URL\" \
-              -v \$(pwd)/sql:/work/sql:ro \
+              -v /deploy/migs/sql:/work/sql:ro \
               postgres:16-alpine sh -lc ' \
                 set -e; \
-                echo \"[preflight] select 1\"; \
-                psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"select 1\"; \
+                echo \"[preflight]\"; psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"select 1\"; \
                 if ls /work/sql/up/*.sql >/dev/null 2>&1; then \
                   for f in \$(ls -1 /work/sql/up/*.sql | sort); do \
                     echo \"[apply] \$f\"; \
-                    psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"\$f\"; \
+                    psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"\$f\"; \
                   done; \
                 elif [ -f /work/sql/up.sql ]; then \
                   echo \"[apply] /work/sql/up.sql\"; \
-                  psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f /work/sql/up.sql; \
+                  psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f /work/sql/up.sql; \
                 else \
-                  echo \"[apply] tidak ada sql/up\"; \
-                fi'; \
+                  echo \"[apply] no sql\"; \
+                fi' \
           "
