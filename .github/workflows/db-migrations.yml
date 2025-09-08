@@ -17,10 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TARGET: ${{ github.event.inputs.target }}
-      # host & kunci SSH dari secrets per target
       HOST: ${{ github.event.inputs.target == 'stg' && secrets.STG_HOST || secrets.PRD_HOST }}
       SSH_KEY_B64: ${{ github.event.inputs.target == 'stg' && secrets.STG_SSH_KEY_B64 || secrets.PRD_SSH_KEY_B64 }}
-      # doppler
+
+      # <<< PENTING: DATABASE_URL selalu terisi dari Secrets GitHub >>>
+      DATABASE_URL: ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL || secrets.PRD_DATABASE_URL }}
+
+      # Doppler untuk env lain (optional, aman jika tidak dipakai)
       DOPPLER_TOKEN: ${{ github.event.inputs.target == 'stg' && secrets.DOPPLER_TOKEN_STG || secrets.DOPPLER_TOKEN_PRD }}
       DOPPLER_CONFIG: ${{ github.event.inputs.target == 'stg' && 'stg' || 'prd' }}
 
@@ -32,15 +35,17 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
 
-      # GANTI: jangan pakai dopplerhq/cli-action (inputnya beda),
-      # instal CLI & export env ke $GITHUB_ENV secara manual
+      # Install hanya CLI Doppler (action ini TIDAK menerima 'with:')
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      # Perintah terpisah untuk menulis env Doppler ke $GITHUB_ENV
       - name: Load env from Doppler → $GITHUB_ENV
+        if: ${{ env.DOPPLER_TOKEN != '' }}
         env:
           DOPPLER_TOKEN: ${{ env.DOPPLER_TOKEN }}
           DOPPLER_CONFIG: ${{ env.DOPPLER_CONFIG }}
         run: |
-          set -e
-          curl -Ls https://cli.doppler.com/install.sh | sudo sh
           doppler secrets download --no-file --format env \
             --project crive --config "$DOPPLER_CONFIG" >> "$GITHUB_ENV"
 
@@ -54,50 +59,57 @@ jobs:
 
       - name: Package SQL
         run: |
-          set -e
+          set -euo pipefail
           tar -czf migs.tar.gz sql || true
           ls -lah migs.tar.gz
 
       - name: Upload package
         run: |
-          set -e
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
-          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
+          set -euo pipefail
+          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
 
-      # JALANKAN psql di server via container postgres dan join ke network yang sama dg db
+      # Apply SQL di server via docker network Postgres (host 'db' hanya resolve di network Docker)
       - name: Apply SQL (via docker network)
-        env:
-          # PENTING: pastikan step ini menerima DATABASE_URL dari $GITHUB_ENV
-          DATABASE_URL: ${{ env.DATABASE_URL }}
         run: |
           set -euo pipefail
-          # cek variabel harus ada
-          : "${DATABASE_URL:?DATABASE_URL is required}"
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" '
+            set -euo pipefail
+            # siapkan area kerja
+            rm -rf /deploy/migs && mkdir -p /deploy/migs
+            tar -xzf /tmp/migs.tar.gz -C /deploy/migs || true
 
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "\
-            set -euo pipefail; \
-            cd /deploy/migs && tar -xzf migs.tar.gz || true; \
-            # siapkan psql container di network Postgres
-            PG_CONT=\$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print \$1; exit}'); \
-            NET=\$(docker inspect -f '{{range \$k,\$v := .NetworkSettings.Networks}}{{printf \"%s\" \$k}}{{end}}' \"\$PG_CONT\"); \
-            # gunakan URL dari runner; ganti host 'db' → nama container, dan matikan sslmode=require bila perlu
-            DB_URL=\"${DATABASE_URL}\"; \
-            DB_URL=\${DB_URL//@db:/@\${PG_CONT}:}; \
-            DB_URL=\${DB_URL//sslmode=require/sslmode=disable}; \
-            echo '[preflight] select 1'; \
-            docker run --rm --network \"\$NET\" -e DATABASE_URL=\"\$DB_URL\" \
-              -v \$(pwd)/sql:/work/sql:ro postgres:16-alpine sh -lc '\
-                set -e; \
-                psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"select 1\"; \
-                if ls /work/sql/up/*.sql >/dev/null 2>&1; then \
-                  for f in \$(ls -1 /work/sql/up/*.sql | sort); do \
-                    echo \"[apply] \$f\"; \
-                    psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"\$f\"; \
-                  done; \
-                elif [ -f /work/sql/up.sql ]; then \
-                  echo \"[apply] /work/sql/up.sql\"; \
-                  psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f /work/sql/up.sql; \
-                else \
-                  echo \"[apply] tidak ada sql/up\"; \
-                fi' \
-          "
+            # pastikan psql container tersedia
+            command -v docker >/dev/null 2>&1 || { echo "docker tidak ada"; exit 1; }
+
+            # ambil DATABASE_URL dari runner (disuntik oleh GitHub via env)
+            DB_URL="${DATABASE_URL}"
+
+            # override sslmode (runner bisa punya require)
+            DB_URL="${DB_URL//sslmode=require/sslmode=disable}"
+
+            # cari container postgres & network yg mem-publish 5432
+            PG_CONT="$(docker ps --format "{{.Names}}\t{{.Ports}}" | awk "/5432/{print \$1; exit}")"
+            [ -n "$PG_CONT" ] || { echo "postgres container tidak ditemukan"; exit 1; }
+            NET="$(docker inspect -f "{{range \$k,\$v := .NetworkSettings.Networks}}{{printf \"%s\" \$k}}{{end}}" "$PG_CONT")"
+
+            echo "[preflight] psql from docker on network: $NET, container: $PG_CONT"
+            docker run --rm --network "$NET" \
+              -e DATABASE_URL="$DB_URL" \
+              -v /deploy/migs/sql:/work/sql:ro \
+              postgres:16-alpine sh -lc "
+                set -e
+                echo \"[preflight] select 1\"
+                psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"select 1\"
+                if ls /work/sql/up/*.sql >/dev/null 2>&1; then
+                  for f in \$(ls -1 /work/sql/up/*.sql | sort); do
+                    echo \"[apply] \$f\"
+                    psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"\$f\"
+                  done
+                elif [ -f /work/sql/up.sql ]; then
+                  echo \"[apply] /work/sql/up.sql\"
+                  psql \"\$DATABASE_URL\" -v ON_ERROR_STOP=1 -f /work/sql/up.sql
+                else
+                  echo \"[apply] tidak ada sql/up\"
+                fi
+              "
+          '
