@@ -2,9 +2,6 @@ name: DB Migrations
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
     inputs:
       env:
         description: Target environment
@@ -13,6 +10,9 @@ permissions:
         options:
           - stg
           - prd
+
+permissions:
+  contents: read
 
 jobs:
   staging:
