@@ -8,36 +8,53 @@ cd "$WORK"
 
 NET_ARG=""
 EXTRA_HOST=""
+USE_HOST_INTERNAL=0
 
-# 1) Coba join ke network docker aplikasi (stg/prd)
+# Coba join ke network aplikasi (compose/stack)
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   if [[ -n "${DOCKER_NETWORK:-}" ]] && docker network ls --format '{{.Name}}' | grep -qx "${DOCKER_NETWORK}"; then
     NET_ARG="--network ${DOCKER_NETWORK}"
   else
-    NET=$(docker ps --format '{{.Networks}}' | tr ' ' '\n' | \
-          grep -E 'crive.*_default|crive-.*-default|crive-stack_default' | head -n1 || true)
+    NET="$(docker ps --format '{{.Networks}}' | tr ' ' '\n' \
+      | grep -E 'crive.*_default|crive-.*-default|crive-stack_default' | head -n1 || true)"
     [[ -n "$NET" ]] && NET_ARG="--network $NET"
   fi
 fi
 
-# 2) Kalau TIDAK join network, ganti host ke host.docker.internal secara AMAN (pakai Node URL, bukan sed)
-DBURL_HOSTED="$DATABASE_URL"
+# Jika tidak join network, pakai host.docker.internal
 if [[ -z "$NET_ARG" ]]; then
-  DBURL_HOSTED="$(env DATABASE_URL="$DATABASE_URL" node - <<'JS'
-    const u = new URL(process.env.DATABASE_URL);
-    if (!u.port) u.port = '5432';
-    u.hostname = 'host.docker.internal';
-    // pastikan query/sslmode dlsb tetap utuh
-    process.stdout.write(u.toString());
-JS
-  )"
   EXTRA_HOST="--add-host=host.docker.internal:host-gateway"
+  USE_HOST_INTERNAL=1
 fi
 
 docker run --rm $NET_ARG $EXTRA_HOST \
-  -e DATABASE_URL="$DBURL_HOSTED" \
+  -e ORIGINAL_DATABASE_URL="$DATABASE_URL" \
+  -e USE_HOST_INTERNAL="$USE_HOST_INTERNAL" \
   -v "$WORK":/work -w /work node:20-bullseye bash -lc '
     set -euo pipefail
+
+    # Bangun ulang URL di DALAM kontainer (Node tersedia di sini)
+    FINAL_URL="$(node - <<'"'"'JS'"'"'
+      const raw = process.env.ORIGINAL_DATABASE_URL || "";
+      if (!raw) { console.error("NO_DBURL"); process.exit(3); }
+      let url;
+      try {
+        // normalisasi skema bila ada "postgresql:"
+        url = new URL(raw.replace(/^postgresql:/, "postgres:"));
+      } catch (e) {
+        console.error("BAD_DBURL:" + raw);
+        process.exit(4);
+      }
+      if (process.env.USE_HOST_INTERNAL === "1") {
+        if (!url.port) url.port = "5432";
+        url.hostname = "host.docker.internal";
+      }
+      process.stdout.write(url.toString());
+    JS
+    )"
+
+    export DATABASE_URL="$FINAL_URL"
+
     npm i pg@8 --no-audit --no-fund --silent
     node db/scripts/migrate.cjs status
     node db/scripts/migrate.cjs up
