@@ -78,8 +78,8 @@ jobs:
             sudo mkdir -p /deploy/migs; cd /deploy/migs; \
             sudo rm -rf work || true; mkdir -p work; \
             tar -xzf migs.tar.gz -C work || true; \
-            PG_CONT=\$(docker ps --format '{{{{.Names}}}}\t{{{{.Ports}}}}' | awk '/5432/{print \$1; exit}'); \
-            NET=\$(docker inspect -f '{{{{range \$k,\$v := .NetworkSettings.Networks}}}}{{{{printf \"%s\",\$k}}}}{{{{end}}}}' \"\$PG_CONT\"); \
+            PG_CONT=$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}'); \
+            NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s" $k}}{{end}}' "$PG_CONT"); \
             docker run --rm --network \"\$NET\" \
               -e DATABASE_URL=\"\$DB_URL\" \
               -v /deploy/migs/work/sql:/work/sql:ro \
