@@ -24,7 +24,7 @@ jobs:
       DOPPLER_CONFIG: ${{ github.event.inputs.target == 'stg' && 'stg' || 'prd' }}
       
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
 
       - name: Install psql
         run: |
