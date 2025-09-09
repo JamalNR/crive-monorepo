@@ -73,10 +73,13 @@ jobs:
           RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
           DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
 
+          DB_URL="${DATABASE_URL//sslmode=require/sslmode=disable}"
+          DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
+
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
 
           # kirim DB_URL ke sesi remote lewat prefix env pada perintah
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DB_URL='$DB_URL' bash -se" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='$DB_URL_ESC' bash -se" <<'REMOTE'
           set -euo pipefail
           mkdir -p /deploy/migs && rm -rf /deploy/migs/work || true
           cd /deploy/migs
@@ -85,7 +88,7 @@ jobs:
           PG_CONT=$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}')
           NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s" $k}}{{end}}' "$PG_CONT")
 
-          docker run --rm --network "$NET" -e DATABASE_URL="$DB_URL" \
+          docker run --rm --network "$NET" -e DATABASE_URL="$DATABASE_URL" \
             -v "$PWD/sql:/work/sql:ro" postgres:16-alpine sh -lc '
               set -e
               echo "[preflight] select 1"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select 1";
