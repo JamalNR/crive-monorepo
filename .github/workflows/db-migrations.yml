@@ -41,7 +41,19 @@ jobs:
           }
           if(bad.length){console.error(bad.join('\n'));process.exit(1);} "
       - name: Dry-run (plan only)
-        run: node db/migrate.mjs plan
+        run: |
+          set -e
+          R=""
+          for f in db/migrate.mjs db/migrate.cjs db/migrate.js; do
+            [ -f "$f" ] && R="$f" && break
+          done
+          if [ -z "$R" ]; then
+            echo "::error title=Runner not found::Expected db/migrate.mjs|.cjs|.js"
+            ls -la db || true
+            exit 1
+          fi
+          echo "Using $R"
+          node "$R" plan
 
   apply-stg:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
