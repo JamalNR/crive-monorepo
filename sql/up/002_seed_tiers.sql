@@ -1,13 +1,15 @@
 -- 002_seed_tiers.sql
 BEGIN;
 
-INSERT INTO tiers (code, name, point_rate) VALUES
-  ('FREE', 'Free', 1),
-  ('PREMIUM', 'Premium', 2),
-  ('EXPERT', 'Expert', 3)
-ON CONFLICT (code) DO UPDATE SET
-  name = EXCLUDED.name,
-  point_rate = EXCLUDED.point_rate,
-  updated_at = NOW();
+INSERT INTO tiers (id, name, point_multiplier)
+VALUES
+  ('free',    'Free',    1),
+  ('premium', 'Premim',  2),
+  ('expert',  'Expert',  3)
+ON CONFLICT (id) DO UPDATE
+SET
+  name            = EXCLUDED.name,
+  point_multiplier = EXCLUDED.point_multiplier;
 
 COMMIT;
+
