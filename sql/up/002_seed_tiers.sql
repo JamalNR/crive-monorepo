@@ -12,3 +12,4 @@ SET
   point_multiplier = EXCLUDED.point_multiplier;
 
 COMMIT;
+
