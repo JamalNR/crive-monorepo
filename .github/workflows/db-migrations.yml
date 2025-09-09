@@ -19,15 +19,20 @@ jobs:
       TARGET: ${{ github.event.inputs.target }}
       HOST: ${{ github.event.inputs.target == 'stg' && secrets.STG_HOST || secrets.PRD_HOST }}
       SSH_KEY_B64: ${{ github.event.inputs.target == 'stg' && secrets.STG_SSH_KEY_B64 || secrets.PRD_SSH_KEY_B64 }}
+      # Sumberkan DB URL langsung dari GH Secrets (bukan Doppler)
       DATABASE_URL: ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL || secrets.PRD_DATABASE_URL }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install psql client
+      - name: Install psql
         run: |
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
+
+      # (Opsional) masih boleh memasang Doppler CLI, tapi TANPA mengandalkan "with:"
+      - name: Install Doppler CLI
+        run: curl -sLf https://cli.doppler.com/install.sh | sudo sh
 
       - name: Prepare SSH
         run: |
@@ -49,25 +54,31 @@ jobs:
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
 
-      - name: Apply SQL (via docker network on server)
+      # ===== Apply: jalankan psql di container postgres yg join network yang sama dengan DB =====
+      - name: Apply SQL (via docker network)
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "\
-            set -euo pipefail; \
-            cd /deploy/migs && tar -xzf migs.tar.gz || true; \
-            DB_URL=\"${{ env.DATABASE_URL }}\"; \
-            # nonaktifkan sslmode=require untuk psql image
-            DB_URL=\${DB_URL//sslmode=require/sslmode=disable}; \
-            # cari container postgres pertama yg expose 5432
-            PG_CONT=\$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print \$1; exit}'); \
-            # ambil nama network dari container tsb
-            NET=\$(docker inspect -f '{{range \$k,\$v := .NetworkSettings.Networks}}{{printf \"%s\" \$k}}{{end}}' \"\$PG_CONT\"); \
-            echo \"[preflight] select 1\"; \
+            set -eo pipefail; \
+            # Inject DB URL dari Secrets runner
+            export DATABASE_URL='${{ env.DATABASE_URL }}'; \
+            if [ -z \"\$DATABASE_URL\" ]; then echo '[fatal] DATABASE_URL empty'; exit 1; fi; \
+            # Di jaringan internal tidak perlu SSL
+            DB_URL=\"\${DATABASE_URL//sslmode=require/sslmode=disable}\"; \
+            # Siapkan workspace & bersihkan sisa root-owned (pakai sudo)
+            sudo mkdir -p /deploy/migs; cd /deploy/migs; \
+            sudo rm -rf work || true; mkdir -p work; \
+            tar -xzf migs.tar.gz -C work || true; \
+            # Cari nama container Postgres yg expose 5432 lalu ambil network-nya
+            PG_CONT=\$(docker ps --format '{{{{.Names}}}}\t{{{{.Ports}}}}' | awk '/5432/{print \$1; exit}'); \
+            NET=\$(docker inspect -f '{{{{range \$k,\$v := .NetworkSettings.Networks}}}}{{{{printf \"%s\",\$k}}}}{{{{end}}}}' \"\$PG_CONT\"); \
+            # Jalankan psql di container postgres resmi di network yang sama
             docker run --rm --network \"\$NET\" \
               -e DATABASE_URL=\"\$DB_URL\" \
-              -v /deploy/migs/sql:/work/sql:ro \
+              -v /deploy/migs/work/sql:/work/sql:ro \
               postgres:16-alpine sh -lc '\
                 set -e; \
+                echo \"[preflight] select 1\"; \
                 psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"select 1\"; \
                 if ls /work/sql/up/*.sql >/dev/null 2>&1; then \
                   for f in \$(ls -1 /work/sql/up/*.sql | sort); do \
