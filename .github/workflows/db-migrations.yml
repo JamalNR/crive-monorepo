@@ -1,6 +1,11 @@
 name: DB Migrations
 
 on:
+  pull_request:
+    paths: [ "db/**" ]
+  push:
+    branches: [ "main" ]
+    paths: [ "db/**" ]
   workflow_dispatch:
     inputs:
       target:
@@ -13,6 +18,116 @@ permissions:
   contents: read
 
 jobs:
+  lint-plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: 'pnpm' }
+      - run: pnpm -w i --frozen-lockfile=false
+
+      - name: Lint migration files (naming, @down, no DROP)
+        run: |
+          node -e "const fs=require('fs');const p='db/migrations';
+          if(!fs.existsSync(p)){process.exit(0)}
+          const bad=[];
+          for (const f of fs.readdirSync(p).filter(x=>x.endsWith('.sql'))) {
+            if(!/^\d{8,}T?\d{0,6}__.+\.sql$/.test(f)) bad.push('bad name: '+f);
+            const t=fs.readFileSync(p+'/'+f,'utf8');
+            if(!/^([\s\S]*?)--\s*@down\s*$/m.test(t)) bad.push('missing -- @down: '+f);
+            if(/\bDROP\s+(TABLE|COLUMN)\b/i.test(t) && !t.includes('/*allow-drop*/')) bad.push('DROP found (no allow): '+f);
+          }
+          if(bad.length){console.error(bad.join('\n'));process.exit(1);} "
+
+      - name: Dry-run (plan only)
+        run: pnpm db:plan
+
+  apply-stg:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: stg
+    env:
+      HOST: ${{ secrets.STG_HOST }}
+      SSH_KEY_B64: ${{ secrets.STG_SSH_KEY_B64 }}
+      DATABASE_URL: ${{ secrets.STG_DATABASE_URL }}
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_STG }}
+      DOPPLER_CONFIG: stg
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+
+      - name: Install Doppler CLI
+        run: curl -sLf https://cli.doppler.com/install.sh | sudo sh
+
+      - name: Install Doppler CLI action
+        uses: dopplerhq/cli-action@v3
+
+      - name: Load env from Doppler -> $GITHUB_ENV
+        run: |
+          set -euo pipefail
+          doppler secrets download --no-file --format env \
+            --project crive --config "${DOPPLER_CONFIG}" \
+            | sed -E 's/^export[[:space:]]+//; s/^;*(.*)$/\1/' \
+            >> "$GITHUB_ENV"
+
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+
+      - name: Package SQL
+        run: |
+          set -euo pipefail
+          tar -czf migs.tar.gz sql || true
+          ls -lah migs.tar.gz || true
+
+      - name: Upload package
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
+          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
+
+      - name: Apply SQL (via docker network) — STG
+        run: |
+          set -euo pipefail
+          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "bash -se" <<'REMOTE'
+          set -euo pipefail
+          rm -rf /deploy/migs/work || true
+          mkdir -p /deploy/migs/work
+          cd /deploy/migs
+          tar -xzf /tmp/migs.tar.gz -C /deploy/migs/work || true
+
+          # Cari container Postgres dan network-nya
+          PG_CONT=$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}')
+          NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT")
+
+          # Jalankan psql dari container Postgres
+          docker run --rm --network "$NET" -e DATABASE_URL="$DATABASE_URL" \
+            -v /deploy/migs/work/sql:/work/sql:ro postgres:alpine sh -lc '
+              set -e
+              if [ -f /work/sql/up.sql ]; then
+                echo "[apply] up.sql"
+                psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /work/sql/up.sql
+              else
+                for f in $(ls /work/sql/*.sql | sort); do
+                  echo "[apply] $f"
+                  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+                done
+              fi
+            '
+          REMOTE
+  
   migrate:
     runs-on: ubuntu-latest
     env:
@@ -64,6 +179,28 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
+
+      - name: Snapshot before migrate (PRD only)
+        if: env.TARGET == 'prd'
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "bash -se" <<'REMOTE'
+          set -euo pipefail
+          : "${DATABASE_URL:?missing}"
+          : "${BACKUP_PASSPHRASE:?missing}"
+          mkdir -p /deploy/backups
+          STAMP=$(date +"%Y%m%d-%H%M")
+          OUT="/deploy/backups/crive-${STAMP}.dump"
+          pg_dump --no-owner --format=custom "$DATABASE_URL" -f "$OUT"
+          gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" -c "$OUT"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$OUT.gpg" > "$OUT.gpg.sha256"
+          else
+            shasum -a 256 "$OUT.gpg" > "$OUT.gpg.sha256"
+          fi
+          rm -f "$OUT"
+          echo "Snapshot OK: $OUT.gpg"
+          REMOTE
 
       - name: Apply SQL (via docker network)
         run: |
