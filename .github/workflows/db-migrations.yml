@@ -28,7 +28,6 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: 'pnpm' }
       - run: pnpm -w i --frozen-lockfile=false
-
       - name: Lint migration files (naming, @down, no DROP)
         run: |
           node -e "const fs=require('fs');const p='db/migrations';
@@ -41,9 +40,8 @@ jobs:
             if(/\bDROP\s+(TABLE|COLUMN)\b/i.test(t) && !t.includes('/*allow-drop*/')) bad.push('DROP found (no allow): '+f);
           }
           if(bad.length){console.error(bad.join('\n'));process.exit(1);} "
-
       - name: Dry-run (plan only)
-        run: pnpm db:plan
+        run: node db/migrate.mjs plan
 
   apply-stg:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
