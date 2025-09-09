@@ -1,3 +1,0 @@
--- @transaction on
--- Example migration (no-op) — DO NOT APPLY IN PROD
--- SELECT 1;
