@@ -71,19 +71,15 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "\
             set -eo pipefail; \
-            # Inject DB URL dari Secrets runner
             export DATABASE_URL='${{ env.DATABASE_URL }}'; \
             if [ -z \"\$DATABASE_URL\" ]; then echo '[fatal] DATABASE_URL empty'; exit 1; fi; \
             # Di jaringan internal tidak perlu SSL
             DB_URL=\"\${DATABASE_URL//sslmode=require/sslmode=disable}\"; \
-            # Siapkan workspace & bersihkan sisa root-owned (pakai sudo)
             sudo mkdir -p /deploy/migs; cd /deploy/migs; \
             sudo rm -rf work || true; mkdir -p work; \
             tar -xzf migs.tar.gz -C work || true; \
-            # Cari nama container Postgres yg expose 5432 lalu ambil network-nya
             PG_CONT=\$(docker ps --format '{{{{.Names}}}}\t{{{{.Ports}}}}' | awk '/5432/{print \$1; exit}'); \
             NET=\$(docker inspect -f '{{{{range \$k,\$v := .NetworkSettings.Networks}}}}{{{{printf \"%s\",\$k}}}}{{{{end}}}}' \"\$PG_CONT\"); \
-            # Jalankan psql di container postgres resmi di network yang sama
             docker run --rm --network \"\$NET\" \
               -e DATABASE_URL=\"\$DB_URL\" \
               -v /deploy/migs/work/sql:/work/sql:ro \
@@ -110,25 +106,20 @@ jobs:
           set -euo pipefail
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" '
             set -euo pipefail
-            # siapkan area kerja
             rm -rf /deploy/migs && mkdir -p /deploy/migs
             tar -xzf /tmp/migs.tar.gz -C /deploy/migs || true
-
-            # pastikan psql container tersedia
             command -v docker >/dev/null 2>&1 || { echo "docker tidak ada"; exit 1; }
-
-            # ambil DATABASE_URL dari runner (disuntik oleh GitHub via env)
             DB_URL="${DATABASE_URL}"
-
-            # override sslmode (runner bisa punya require)
             DB_URL="${DB_URL//sslmode=require/sslmode=disable}"
-
-            # cari container postgres & network yg mem-publish 5432
-            PG_CONT="$(docker ps --format "{{.Names}}\t{{.Ports}}" | awk "/5432/{print \$1; exit}")"
-            [ -n "$PG_CONT" ] || { echo "postgres container tidak ditemukan"; exit 1; }
-            NET="$(docker inspect -f "{{range \$k,\$v := .NetworkSettings.Networks}}{{printf \"%s\" \$k}}{{end}}" "$PG_CONT")"
-
-            echo "[preflight] psql from docker on network: $NET, container: $PG_CONT"
+            PG_CONT=$(docker ps | awk '/5432/{print $NF; exit}')
+            if [ -z "$PG_CONT" ]; then
+              echo "::error::Tidak menemukan container Postgres (port 5432)"
+              docker ps
+              exit 1
+            fi
+            NET=$(docker inspect "$PG_CONT" | sed -n 's/.*"Networks":{"\([^"]*\)".*/\1/p' | head -n1)
+            [ -z "$NET" ] && NET="crive-stack_default"
+            echo "[preflight] container=$PG_CONT net=$NET"
             docker run --rm --network "$NET" \
               -e DATABASE_URL="$DB_URL" \
               -v /deploy/migs/sql:/work/sql:ro \
