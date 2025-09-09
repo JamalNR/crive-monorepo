@@ -77,12 +77,15 @@ jobs:
           cd /deploy/migs
           tar -xzf /tmp/migs.tar.gz
 
+          # ambil DATABASE_URL dari runner
           DATABASE_URL='${{ env.DATABASE_URL }}'
           DB_URL="${DATABASE_URL//sslmode=require/sslmode=disable}"
 
+          # temukan container postgres & network
           PG_CONT=$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}')
           NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s" $k}}{{end}}' "$PG_CONT")
 
+          # jalankan psql via container
           docker run --rm --network "$NET" -e DATABASE_URL="$DB_URL" \
             -v "$PWD/sql:/work/sql:ro" postgres:16-alpine sh -lc '
               set -e
