@@ -38,6 +38,10 @@ jobs:
         uses: dopplerhq/cli-action@v3
 
       - name: Load env from Doppler → $GITHUB_ENV
+        shell: bash
+        env:
+          DOPPLER_TOKEN: ${{ env.DOPPLER_TOKEN }}
+          DOPPLER_CONFIG: ${{ env.DOPPLER_CONFIG }}
         run: |
           set -euo pipefail
           doppler secrets download --no-file --format env \
