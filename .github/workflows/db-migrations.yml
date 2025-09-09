@@ -19,6 +19,8 @@ jobs:
       TARGET: ${{ github.event.inputs.target }}
       HOST: ${{ github.event.inputs.target == 'stg' && secrets.STG_HOST || secrets.PRD_HOST }}
       SSH_KEY_B64: ${{ github.event.inputs.target == 'stg' && secrets.STG_SSH_KEY_B64 || secrets.PRD_SSH_KEY_B64 }}
+      # Sumberkan DB URL langsung dari GH Secrets (bukan Doppler)
+      DATABASE_URL: ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL || secrets.PRD_DATABASE_URL }}
 
       # <<< PENTING: DATABASE_URL selalu terisi dari Secrets GitHub >>>
       DATABASE_URL: ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL || secrets.PRD_DATABASE_URL }}
@@ -26,7 +28,7 @@ jobs:
       # Doppler untuk env lain (optional, aman jika tidak dipakai)
       DOPPLER_TOKEN: ${{ github.event.inputs.target == 'stg' && secrets.DOPPLER_TOKEN_STG || secrets.DOPPLER_TOKEN_PRD }}
       DOPPLER_CONFIG: ${{ github.event.inputs.target == 'stg' && 'stg' || 'prd' }}
-
+      
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +36,10 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
+
+      # (Opsional) masih boleh memasang Doppler CLI, tapi TANPA mengandalkan "with:"
+      - name: Install Doppler CLI
+        run: curl -sLf https://cli.doppler.com/install.sh | sudo sh
 
       # Install hanya CLI Doppler (action ini TIDAK menerima 'with:')
       - name: Install Doppler CLI
@@ -66,6 +72,47 @@ jobs:
       - name: Upload package
         run: |
           set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
+          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
+
+      # ===== Apply: jalankan psql di container postgres yg join network yang sama dengan DB =====
+      - name: Apply SQL (via docker network)
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "\
+            set -eo pipefail; \
+            # Inject DB URL dari Secrets runner
+            export DATABASE_URL='${{ env.DATABASE_URL }}'; \
+            if [ -z \"\$DATABASE_URL\" ]; then echo '[fatal] DATABASE_URL empty'; exit 1; fi; \
+            # Di jaringan internal tidak perlu SSL
+            DB_URL=\"\${DATABASE_URL//sslmode=require/sslmode=disable}\"; \
+            # Siapkan workspace & bersihkan sisa root-owned (pakai sudo)
+            sudo mkdir -p /deploy/migs; cd /deploy/migs; \
+            sudo rm -rf work || true; mkdir -p work; \
+            tar -xzf migs.tar.gz -C work || true; \
+            # Cari nama container Postgres yg expose 5432 lalu ambil network-nya
+            PG_CONT=\$(docker ps --format '{{{{.Names}}}}\t{{{{.Ports}}}}' | awk '/5432/{print \$1; exit}'); \
+            NET=\$(docker inspect -f '{{{{range \$k,\$v := .NetworkSettings.Networks}}}}{{{{printf \"%s\",\$k}}}}{{{{end}}}}' \"\$PG_CONT\"); \
+            # Jalankan psql di container postgres resmi di network yang sama
+            docker run --rm --network \"\$NET\" \
+              -e DATABASE_URL=\"\$DB_URL\" \
+              -v /deploy/migs/work/sql:/work/sql:ro \
+              postgres:16-alpine sh -lc '\
+                set -e; \
+                echo \"[preflight] select 1\"; \
+                psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -c \"select 1\"; \
+                if ls /work/sql/up/*.sql >/dev/null 2>&1; then \
+                  for f in \$(ls -1 /work/sql/up/*.sql | sort); do \
+                    echo \"[apply] \$f\"; \
+                    psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f \"\$f\"; \
+                  done; \
+                elif [ -f /work/sql/up.sql ]; then \
+                  echo \"[apply] /work/sql/up.sql\"; \
+                  psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f /work/sql/up.sql; \
+                else \
+                  echo \"[apply] tidak ada sql/up\"; \
+                fi' \
+          "
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
 
       # Apply SQL di server via docker network Postgres (host 'db' hanya resolve di network Docker)
