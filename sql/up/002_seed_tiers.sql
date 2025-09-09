@@ -1,4 +1,3 @@
--- 002_seed_tiers.sql
 BEGIN;
 
 INSERT INTO tiers (id, name, point_multiplier)
@@ -12,3 +11,5 @@ SET
   point_multiplier = EXCLUDED.point_multiplier;
 
 COMMIT;
+
+
