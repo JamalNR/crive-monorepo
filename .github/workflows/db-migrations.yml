@@ -106,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "bash -se" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "env DATABASE_URL=\"$DATABASE_URL\" bash -se" <<'REMOTE'
           set -euo pipefail
           rm -rf /deploy/migs/work || true
           mkdir -p /deploy/migs/work
