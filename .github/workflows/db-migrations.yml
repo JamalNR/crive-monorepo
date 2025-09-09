@@ -19,13 +19,7 @@ jobs:
       TARGET: ${{ github.event.inputs.target }}
       HOST: ${{ github.event.inputs.target == 'stg' && secrets.STG_HOST || secrets.PRD_HOST }}
       SSH_KEY_B64: ${{ github.event.inputs.target == 'stg' && secrets.STG_SSH_KEY_B64 || secrets.PRD_SSH_KEY_B64 }}
-      # Sumberkan DB URL langsung dari GH Secrets (bukan Doppler)
       DATABASE_URL: ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL || secrets.PRD_DATABASE_URL }}
-
-      # <<< PENTING: DATABASE_URL selalu terisi dari Secrets GitHub >>>
-      DATABASE_URL: ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL || secrets.PRD_DATABASE_URL }}
-
-      # Doppler untuk env lain (optional, aman jika tidak dipakai)
       DOPPLER_TOKEN: ${{ github.event.inputs.target == 'stg' && secrets.DOPPLER_TOKEN_STG || secrets.DOPPLER_TOKEN_PRD }}
       DOPPLER_CONFIG: ${{ github.event.inputs.target == 'stg' && 'stg' || 'prd' }}
       
@@ -37,15 +31,12 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client
 
-      # (Opsional) masih boleh memasang Doppler CLI, tapi TANPA mengandalkan "with:"
       - name: Install Doppler CLI
         run: curl -sLf https://cli.doppler.com/install.sh | sudo sh
 
-      # Install hanya CLI Doppler (action ini TIDAK menerima 'with:')
       - name: Install Doppler CLI
         uses: dopplerhq/cli-action@v3
 
-      # Perintah terpisah untuk menulis env Doppler ke $GITHUB_ENV
       - name: Load env from Doppler → $GITHUB_ENV
         if: ${{ env.DOPPLER_TOKEN != '' }}
         env:
@@ -75,7 +66,6 @@ jobs:
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
 
-      # ===== Apply: jalankan psql di container postgres yg join network yang sama dengan DB =====
       - name: Apply SQL (via docker network)
         run: |
           set -euo pipefail
@@ -115,7 +105,6 @@ jobs:
           "
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
 
-      # Apply SQL di server via docker network Postgres (host 'db' hanya resolve di network Docker)
       - name: Apply SQL (via docker network)
         run: |
           set -euo pipefail
