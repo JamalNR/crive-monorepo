@@ -43,7 +43,7 @@ jobs:
           if(bad.length){console.error(bad.join('\n'));process.exit(1);} "
 
       - name: Dry-run (plan only)
-        run: pnpm db:plan
+        run: node db/migrate.mjs plan
 
   apply-stg:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
