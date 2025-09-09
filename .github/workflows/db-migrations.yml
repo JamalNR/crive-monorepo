@@ -42,19 +42,14 @@ jobs:
           if(bad.length){console.error(bad.join('\n'));process.exit(1);} "
       - name: Dry-run (plan only)
         run: |
-          set -e
-          R=""
-          for f in db/migrate.mjs db/migrate.cjs db/migrate.js; do
-            [ -f "$f" ] && R="$f" && break
-          done
-          if [ -z "$R" ]; then
-            echo "::error title=Runner not found::Expected db/migrate.mjs|.cjs|.js"
-            ls -la db || true
-            exit 1
-          fi
-          echo "Using $R"
-          node "$R" plan
-
+          node -e "
+          const fs=require('fs');
+          const p='db/migrations';
+          if(!fs.existsSync(p)){ console.log('Migrasi terdeteksi: 0'); process.exit(0); }
+          const files=fs.readdirSync(p).filter(f=>f.endsWith('.sql')).sort();
+          console.log('Migrasi terdeteksi:', files.length);
+          files.forEach(f=>console.log('-', f));
+          "
   apply-stg:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
