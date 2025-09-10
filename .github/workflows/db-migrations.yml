@@ -113,16 +113,15 @@ jobs:
           cd /deploy/migs
           tar -xzf /tmp/migs.tar.gz -C /deploy/migs/work || true
 
-          # --- Pilih network paling aman ---
-          PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
+          # Tentukan network
+          PG_CONT=$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)
           NET=""
-          if [ -n "\$PG_CONT" ]; then
-            NET="$(docker inspect -f '{{range \$k,\$v := .NetworkSettings.Networks}}{{printf "%s " \$k}}{{end}}' "\$PG_CONT" 2>/dev/null || true)"
+          if [ -n "$PG_CONT" ]; then
+            NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')
           fi
 
-          NET_FLAG=""
-          if [ -n "\$NET" ] && docker network inspect "\$NET" >/dev/null 2>&1; then
-            NET_FLAG="--network \$NET"
+          if [ -n "$NET" ] && docker network inspect "$NET" >/dev/null 2>&1; then
+            NET_FLAG="--network $NET"
           elif docker network inspect crive-stack_default >/dev/null 2>&1; then
             NET_FLAG="--network crive-stack_default"
           else
@@ -206,7 +205,8 @@ jobs:
         if: env.TARGET == 'prd'
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "bash -se" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" \
+            "env DATABASE_URL=\"$DATABASE_URL\" BACKUP_PASSPHRASE=\"$BACKUP_PASSPHRASE\" bash -se" <<'REMOTE'
           set -euo pipefail
           : "${DATABASE_URL:?missing}"
           : "${BACKUP_PASSPHRASE:?missing}"
