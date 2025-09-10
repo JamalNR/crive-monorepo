@@ -144,8 +144,8 @@ jobs:
             run_psql --network crive-stack_default
           else
             echo "[net] using: --network host"
-            if echo "\$DATABASE_URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
-              DATABASE_URL="\$(echo "\$DATABASE_URL" | sed 's/@db/@127.0.0.1/')"
+            if echo "$DATABASE_URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+              DATABASE_URL="\$(echo "$DATABASE_URL" | sed 's/@db/@127.0.0.1/')"
             fi
             run_psql --network host
           fi
@@ -205,6 +205,8 @@ jobs:
 
       - name: Snapshot before migrate (PRD only)
         if: env.TARGET == 'prd'
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
           set -euo pipefail
           BP="${BACKUP_PASSPHRASE:-}"
