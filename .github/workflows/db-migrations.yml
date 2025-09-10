@@ -208,7 +208,7 @@ jobs:
         env:
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
-          set -euo pipefail
+          set -eo pipefail
           BP="${BACKUP_PASSPHRASE:-}"
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" \
             "env DATABASE_URL=\"$DATABASE_URL\" BACKUP_PASSPHRASE=\"$BACKUP_PASSPHRASE\" bash -se" <<'REMOTE'
