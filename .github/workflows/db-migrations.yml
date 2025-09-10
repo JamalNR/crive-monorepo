@@ -208,20 +208,65 @@ jobs:
         env:
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
+          # runner: jangan -u (hindari unbound), tetap pipefail
           set -eo pipefail
-          BP="${BACKUP_PASSPHRASE:-}"
+          BP="${BACKUP_PASSPHRASE-}"
+
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" \
-            "env DATABASE_URL=\"$DATABASE_URL\" BACKUP_PASSPHRASE=\"$BACKUP_PASSPHRASE\" bash -se" <<'REMOTE'
+            "env DATABASE_URL=\"$DATABASE_URL\" BACKUP_PASSPHRASE=\"$BP\" bash -se" <<'REMOTE'
           set -euo pipefail
           : "${DATABASE_URL:?missing}"
+
+          # --- passphrase fallback (tetap bisa snapshot walau secret kosong)
           if [ -z "${BACKUP_PASSPHRASE:-}" ]; then
             echo "::warning title=BACKUP_PASSPHRASE missing::Using ephemeral passphrase for snapshot"
             BACKUP_PASSPHRASE="$(openssl rand -hex 16)"
           fi
+
           mkdir -p /deploy/backups
-          STAMP=$(date +"%Y%m%d-%H%M")
+          STAMP="$(date +'%Y%m%d-%H%M')"
           OUT="/deploy/backups/crive-${STAMP}.dump"
-          pg_dump --no-owner --format=custom "$DATABASE_URL" -f "$OUT"
+
+          # --- deteksi network Postgres (agar host 'db' ter-resolve)
+          PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
+          NET=""
+          if [ -n "$PG_CONT" ]; then
+            NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')"
+          fi
+
+          SNAP_OK=0
+          if [ -n "$NET" ] && docker network inspect "$NET" >/dev/null 2>&1; then
+            echo "[snapshot] using docker network: $NET"
+            docker run --rm --network "$NET" \
+              -e DATABASE_URL="$DATABASE_URL" \
+              -v /deploy/backups:/backup \
+              postgres:alpine sh -lc 'pg_dump --no-owner --format=custom "$DATABASE_URL" -f /backup/out.dump'
+            mv "/deploy/backups/out.dump" "$OUT"
+            SNAP_OK=1
+          elif docker network inspect crive-stack_default >/dev/null 2>&1; then
+            echo "[snapshot] using docker network: crive-stack_default"
+            docker run --rm --network crive-stack_default \
+              -e DATABASE_URL="$DATABASE_URL" \
+              -v /deploy/backups:/backup \
+              postgres:alpine sh -lc 'pg_dump --no-owner --format=custom "$DATABASE_URL" -f /backup/out.dump'
+            mv "/deploy/backups/out.dump" "$OUT"
+            SNAP_OK=1
+          else
+            echo "[snapshot] no docker network; trying host"
+            URL="$DATABASE_URL"
+            if echo "$URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+              URL="$(echo "$URL" | sed 's/@db/@127.0.0.1/')"
+            fi
+            if pg_dump --no-owner --format=custom "$URL" -f "$OUT"; then
+              SNAP_OK=1
+            fi
+          fi
+
+          if [ "$SNAP_OK" -ne 1 ]; then
+            echo "::error title=Snapshot failed::Unable to dump database on any network mode"
+            exit 1
+          fi
+
           gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" -c "$OUT"
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "$OUT.gpg" > "$OUT.gpg.sha256"
