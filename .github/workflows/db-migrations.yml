@@ -120,8 +120,6 @@ jobs:
             NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')
           fi
 
-          echo "[net] detected: '$NET'"
-
           run_psql() {
             docker run --rm "$@" -e DATABASE_URL="$DATABASE_URL" \
               -v /deploy/migs/work/sql:/work/sql:ro postgres:alpine sh -lc '
@@ -209,6 +207,7 @@ jobs:
         if: env.TARGET == 'prd'
         run: |
           set -euo pipefail
+          BP="${BACKUP_PASSPHRASE:-}"
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" \
             "env DATABASE_URL=\"$DATABASE_URL\" BACKUP_PASSPHRASE=\"$BACKUP_PASSPHRASE\" bash -se" <<'REMOTE'
           set -euo pipefail
