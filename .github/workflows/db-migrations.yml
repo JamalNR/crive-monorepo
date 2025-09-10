@@ -113,21 +113,38 @@ jobs:
           cd /deploy/migs
           tar -xzf /tmp/migs.tar.gz -C /deploy/migs/work || true
 
-          # Cari container Postgres dan network-nya
-          PG_CONT=$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}')
-          NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT")
+          # --- Pilih network paling aman ---
+          PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
+          NET=""
+          if [ -n "\$PG_CONT" ]; then
+            NET="$(docker inspect -f '{{range \$k,\$v := .NetworkSettings.Networks}}{{printf "%s " \$k}}{{end}}' "\$PG_CONT" 2>/dev/null || true)"
+          fi
 
-          # Jalankan psql dari container Postgres
-          docker run --rm --network "$NET" -e DATABASE_URL="$DATABASE_URL" \
+          NET_FLAG=""
+          if [ -n "\$NET" ] && docker network inspect "\$NET" >/dev/null 2>&1; then
+            NET_FLAG="--network \$NET"
+          elif docker network inspect crive-stack_default >/dev/null 2>&1; then
+            NET_FLAG="--network crive-stack_default"
+          else
+            NET_FLAG="--network host"
+            # Jika URL menggunakan host "db", ganti ke 127.0.0.1 agar bisa via host network
+            if echo "\$DATABASE_URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+              DATABASE_URL="\$(echo "\$DATABASE_URL" | sed 's/@db/@127.0.0.1/')"
+            fi
+          fi
+          echo "[net] using: \$NET_FLAG"
+
+          # Jalankan psql dari image postgres
+          docker run --rm \$NET_FLAG -e DATABASE_URL="\$DATABASE_URL" \
             -v /deploy/migs/work/sql:/work/sql:ro postgres:alpine sh -lc '
               set -e
               if [ -f /work/sql/up.sql ]; then
                 echo "[apply] up.sql"
-                psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /work/sql/up.sql
+                psql "\$DATABASE_URL" -v ON_ERROR_STOP=1 -f /work/sql/up.sql
               else
-                for f in $(ls /work/sql/*.sql | sort); do
-                  echo "[apply] $f"
-                  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+                for f in \$(ls /work/sql/*.sql 2>/dev/null | sort); do
+                  echo "[apply] \$f"
+                  psql "\$DATABASE_URL" -v ON_ERROR_STOP=1 -f "\$f"
                 done
               fi
             '
