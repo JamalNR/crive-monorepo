@@ -13,13 +13,23 @@ on:
         required: true
         type: choice
         options: [stg, prd]
+      run_lint:
+        description: Also run lint-plan on manual run
+        required: false
+        type: boolean
+        default: false
+      run_stg:
+        description: Also run apply-stg on manual run
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   lint-plan:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event.inputs.run_lint == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,7 +61,7 @@ jobs:
           files.forEach(f=>console.log('-', f));
           "
   apply-stg:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.event.inputs.target == 'stg' || github.event.inputs.run_stg == 'true'
     runs-on: ubuntu-latest
     environment: stg
     env:
@@ -152,6 +162,7 @@ jobs:
           REMOTE
   
   migrate:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       TARGET: ${{ github.event.inputs.target }}
