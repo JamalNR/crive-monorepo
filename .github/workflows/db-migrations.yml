@@ -179,8 +179,6 @@ jobs:
   migrate:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
     env:
       TARGET: ${{ github.event.inputs.target }}
       HOST: ${{ github.event.inputs.target == 'stg' && secrets.STG_HOST || secrets.PRD_HOST }}
@@ -188,7 +186,9 @@ jobs:
       DATABASE_URL: ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL || secrets.PRD_DATABASE_URL }}
       DOPPLER_TOKEN: ${{ github.event.inputs.target == 'stg' && secrets.DOPPLER_TOKEN_STG || secrets.DOPPLER_TOKEN_PRD }}
       DOPPLER_CONFIG: ${{ github.event.inputs.target == 'stg' && 'stg' || 'prd' }}
-    
+    steps:
+      - uses: actions/checkout@v4
+      
       - name: Install psql
         run: |
           sudo apt-get update -y
