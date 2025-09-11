@@ -216,9 +216,11 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: migration-observability-stg
+          # ← unik per job & attempt
+          name: migration-observability-stg-${{ github.job }}-${{ github.run_attempt }}
           path: "migration-${{ github.run_id }}.jsonl"
           if-no-files-found: ignore
+
 
   # ---- 4) Apply STG/PRD manual (tidak jalan di PR) + Snapshot PRD + Observability ----
   migrate:
@@ -337,6 +339,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: migration-observability-${{ github.event.inputs.target || 'auto' }}
+          # ← unik per target, job, attempt
+          name: migration-observability-${{ env.TARGET || 'auto' }}-${{ github.job }}-${{ github.run_attempt }}
           path: "migration-${{ github.run_id }}.jsonl"
           if-no-files-found: ignore
