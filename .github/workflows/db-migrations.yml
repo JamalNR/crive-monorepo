@@ -69,37 +69,43 @@ jobs:
           }
           if(bad.length){console.error(bad.join('\n'));process.exit(1);} "
 
-  # ---- 2) Compat Matrix: Postgres 15 & 16 saat PR ----
   compat-matrix:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     strategy:
-      matrix: { pg: ['15','16'] }
+      fail-fast: false
+      matrix: { pg: ['15','16','17'] }
+      
+  services:
+    postgres:
+      image: postgres:${{ matrix.pg }}
+      env:
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_DB: crive
+      ports: ['5432:5432']
+      options: >-
+        --health-cmd="pg_isready -U postgres -d crive"
+        --health-interval=10s --health-timeout=5s --health-retries=30
+        
+  env:
+    DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crive
 
-    services:
-      postgres:
-        image: postgres:${{ matrix.pg }}
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: crive
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=10s --health-timeout=5s --health-retries=20
-
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crive
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with: { version: 10 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: 'pnpm' }
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Apply migrations on ephemeral DB
-        run: node db/migrate.mjs --apply --no-advisory-lock || true
+  steps:
+    - uses: actions/checkout@v4
+    - uses: pnpm/action-setup@v3
+      with: { version: 10 }
+    - uses: actions/setup-node@v4
+      with: { node-version: 20, cache: 'pnpm' }
+    - run: pnpm install --frozen-lockfile --ignore-scripts   # line 101 sekarang valid
+    - name: Apply baseline + migrations (ephemeral DB)
+      run: |
+        if ls sql/up/*.sql >/dev/null 2>&1; then
+          for f in $(ls -1 sql/up/*.sql | sort); do
+            echo "[baseline] $f"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f";
+          done
+        fi
+        node db/migrate.mjs --apply --no-advisory-lock
 
   # ---- 3) Apply STG manual + Observability artifact ----
   apply-stg:
