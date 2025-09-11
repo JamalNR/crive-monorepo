@@ -69,7 +69,6 @@ jobs:
           }
           if(bad.length){console.error(bad.join('\n'));process.exit(1);} "
 
-  # ---- 2) Compat Matrix: Postgres 15 & 16 saat PR ----
   compat-matrix:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
