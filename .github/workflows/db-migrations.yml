@@ -74,7 +74,8 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     strategy:
-      matrix: { pg: ['15','16'] }
+      fail-fast: false
+      matrix: { pg: ['15','16','17'] }
 
     services:
       postgres:
@@ -85,8 +86,8 @@ jobs:
           POSTGRES_DB: crive
         ports: ['5432:5432']
         options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=10s --health-timeout=5s --health-retries=20
+          --health-cmd="pg_isready -U postgres -d crive"
+          --health-interval=10s --health-timeout=5s --health-retries=30
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crive
@@ -98,8 +99,20 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: 'pnpm' }
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Apply migrations on ephemeral DB
-        run: node db/migrate.mjs --apply --no-advisory-lock || true
+      - name: Apply baseline + migrations (ephemeral DB)
+        run: |
+          # baseline (opsional, kalau ada sql/up)
+          if ls sql/up/*.sql >/dev/null 2>&1; then
+            for f in $(ls -1 sql/up/*.sql | sort); do
+              echo "[baseline] $f"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f";
+            done
+          fi
+          node db/migrate.mjs --apply --no-advisory-lock
+
+        - name: Schema smoke check
+          run: |
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select version();"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "\dt+"
 
   # ---- 3) Apply STG manual + Observability artifact ----
   apply-stg:
