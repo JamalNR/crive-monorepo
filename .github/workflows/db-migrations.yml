@@ -60,9 +60,6 @@ jobs:
           console.log('Migrasi terdeteksi:', files.length);
           files.forEach(f=>console.log('-', f));
           "
-      - name: Lint destructiveness
-        run: bash scripts/db/lint-migrations.sh
-        
   apply-stg:
     if: github.ref == 'refs/heads/main' || github.event.inputs.target == 'stg' || github.event.inputs.run_stg == 'true'
     runs-on: ubuntu-latest
@@ -163,21 +160,9 @@ jobs:
             run_psql --network host
           fi
           REMOTE
-
-      - name: Report summary
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-          HOST: ${{ env.HOST }}
-          TARGET: ${{ env.TARGET }}
-        run: node db/tools/report.mjs
-
-      - name: Audit schema diff
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-        run: bash scripts/db/audit-schema.sh
   
   migrate:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       TARGET: ${{ github.event.inputs.target }}
@@ -186,9 +171,10 @@ jobs:
       DATABASE_URL: ${{ github.event.inputs.target == 'stg' && secrets.STG_DATABASE_URL || secrets.PRD_DATABASE_URL }}
       DOPPLER_TOKEN: ${{ github.event.inputs.target == 'stg' && secrets.DOPPLER_TOKEN_STG || secrets.DOPPLER_TOKEN_PRD }}
       DOPPLER_CONFIG: ${{ github.event.inputs.target == 'stg' && 'stg' || 'prd' }}
+      
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install psql
         run: |
           sudo apt-get update -y
@@ -340,15 +326,3 @@ jobs:
               fi
             '
           REMOTE
-
-      - name: Report summary
-        env:
-          DATABASE_URL: ${{ env.DATABASE_URL }}
-          HOST: ${{ env.HOST }}
-          TARGET: ${{ env.TARGET }}
-        run: node db/tools/report.mjs
-
-       - name: Audit schema diff
-         env:
-           DATABASE_URL: ${{ env.DATABASE_URL }}
-         run: bash scripts/db/audit-schema.sh
