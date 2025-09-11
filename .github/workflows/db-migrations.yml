@@ -178,14 +178,18 @@ jobs:
           REMOTE
 
       - name: Fetch observability log (STG)
-        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
-        run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
+        env:
+          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
+        run: |
+          scp -o StrictHostKeyChecking=yes \
+            deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload observability artifact (STG)
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: migration-observability-stg
-          path: migration-${{ github.run_id }}.jsonl
+          path: "migration-${{ github.run_id }}.jsonl"
           if-no-files-found: ignore
   
   migrate:
@@ -351,13 +355,17 @@ jobs:
           fi
           REMOTE
 
-      - name: Fetch observability log (STG/PRD)
-        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
-        run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
+      - name: Fetch observability log (STG)
+        env:
+          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
+        run: |
+          scp -o StrictHostKeyChecking=yes \
+            deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload observability artifact (STG)
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: migration-observability-${{ github.event.inputs.target || 'auto' }}
-          path: migration-${{ github.run_id }}.jsonl
+          name: migration-observability-stg
+          path: "migration-${{ github.run_id }}.jsonl"
           if-no-files-found: ignore
