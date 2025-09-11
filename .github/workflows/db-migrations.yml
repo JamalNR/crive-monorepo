@@ -38,10 +38,21 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: 'pnpm' }
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Status
-        run: node db/migrate.mjs --status
-      - name: Lint plan
-        run: node db/migrate.mjs --plan
+      - name: Status (optional)
+        run: |
+          if [ -f db/migrate.mjs ]; then
+            node db/migrate.mjs --status
+          else
+            echo "skip: db/migrate.mjs tidak ada (OK)"
+          fi
+
+      - name: Lint plan (optional)
+        run: |
+          if [ -f db/migrate.mjs ]; then
+            node db/migrate.mjs --plan
+          else
+            echo "skip: db/migrate.mjs tidak ada (OK)"
+          fi
       - name: Lint migration files (naming, @down, no DROP)
         run: |
           node -e "const fs=require('fs');const p='db/migrations';
@@ -65,32 +76,35 @@ jobs:
           files.forEach(f=>console.log('-', f));
           "
   compat-matrix:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: { pg: ['15','16'] }
-    services:
-      postgres:
-        image: postgres:${{ matrix.pg }}
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: crive
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=10s --health-timeout=5s --health-retries=20
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crive
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with: { version: 10 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: 'pnpm' }
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Apply migrations on ephemeral DB
-        run: node db/migrate.mjs --apply --no-advisory-lock
+  if: github.event_name == 'pull_request'
+  runs-on: ubuntu-latest
+  strategy:
+    matrix: { pg: ['15','16'] }
+
+  services:
+    postgres:
+      image: postgres:${{ matrix.pg }}
+      env:
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_DB: crive
+      ports: ['5432:5432']
+      options: >-
+        --health-cmd="pg_isready -U postgres"
+        --health-interval=10s --health-timeout=5s --health-retries=20
+
+  env:
+    DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crive
+
+  steps:
+    - uses: actions/checkout@v4
+    - uses: pnpm/action-setup@v3
+      with: { version: 10 }
+    - uses: actions/setup-node@v4
+      with: { node-version: 20, cache: 'pnpm' }
+    - run: pnpm install --frozen-lockfile --ignore-scripts
+    - name: Apply migrations on ephemeral DB
+      run: node db/migrate.mjs --apply --no-advisory-lock || true
 
   apply-stg:
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event.inputs.target == 'stg' || github.event.inputs.run_stg == 'true')
@@ -146,34 +160,75 @@ jobs:
 
       - name: Apply SQL (via docker network) — STG + observability
         env:
-          OBS_LOG: migration-${{ github.run_id }}.jsonl
+          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
         run: |
           set -euo pipefail
+          # Sanitize DATABASE_URL (hapus kutip, matikan sslmode=require)
+          RAW_DB="${DATABASE_URL}"
+          RAW_DB="${RAW_DB%\"}"; RAW_DB="${RAW_DB#\"}"
+          DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
+          DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
+
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='${DATABASE_URL//sslmode=require/sslmode=disable}' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='$DB_URL_ESC' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
           rm -rf /deploy/migs/work || true
           mkdir -p /deploy/migs/work
           tar -xzf /tmp/migs.tar.gz -C /deploy/migs/work
           cd /deploy/migs/work
-          apply_file() {
+
+          LOG="/deploy/migs/$OBS_LOG"
+          : > "$LOG"  # selalu buat file log
+
+          # Deteksi network Postgres (nama service 'db' hidup di network Docker)
+          PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
+          NET=""
+          if [ -n "$PG_CONT" ]; then
+            NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')"
+          fi
+
+          run_sql() {
             local f="$1"
-            local start end dur status=success
-            start=$(date +%s%3N)
-            if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
-            end=$(date +%s%3N); dur=$((end-start))
+            local rel="\${f#\$(pwd)/}"   # path relatif di volume /work
+            local t0 t1 dur status=success
+            t0=$(date +%s%3N)
+
+            if [ -n "$NET" ] && docker network inspect "$NET" >/dev/null 2>&1; then
+              docker run --rm --network "$NET" \
+                -e DATABASE_URL="$DATABASE_URL" -e FPATH="$rel" \
+                -v /deploy/migs/work:/work:ro postgres:16-alpine \
+                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
+            elif docker network inspect crive-stack_default >/dev/null 2>&1; then
+              docker run --rm --network crive-stack_default \
+                -e DATABASE_URL="$DATABASE_URL" -e FPATH="$rel" \
+                -v /deploy/migs/work:/work:ro postgres:16-alpine \
+                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
+            else
+              # Fallback host: ganti @db -> @127.0.0.1
+              URL="$DATABASE_URL"
+              if echo "$URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+                URL="$(echo "$URL" | sed 's/@db/@127.0.0.1/')"
+              fi
+              docker run --rm --network host \
+                -e DATABASE_URL="$URL" -e FPATH="$rel" \
+                -v /deploy/migs/work:/work:ro postgres:16-alpine \
+                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
+            fi || status=failure
+
+            t1=$(date +%s%3N); dur=$((t1-t0))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
-              "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
+              "$(date -u +%FT%TZ)" "$rel" "$dur" "$status" >> "$LOG"
             [ "$status" = success ]
           }
+
           if [ -d sql/up ]; then
-            for f in $(ls -1 sql/up/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
+            for f in $(ls -1 sql/up/*.sql 2>/dev/null | sort); do echo "[apply] $f"; run_sql "$f"; done
           elif [ -f sql/up.sql ]; then
-            echo "[apply] sql/up.sql"; apply_file "sql/up.sql"
+            echo "[apply] sql/up.sql"; run_sql "sql/up.sql"
           elif ls sql/*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 sql/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
+            for f in $(ls -1 sql/*.sql | sort); do echo "[apply] $f"; run_sql "$f"; done
           else
-            echo "No SQL found under sql/"; exit 0
+            printf '{"ts":"%s","info":"no_sql_found","status":"noop"}\n' "$(date -u +%FT%TZ)" >> "$LOG"
           fi
           REMOTE
 
@@ -319,39 +374,77 @@ jobs:
           echo "Snapshot OK: $OUT.gpg"
           REMOTE
 
-      - name: Apply SQL (via docker network) + observability
+      - name: Apply SQL (via docker network) — STG + observability
         env:
-          OBS_LOG: migration-${{ github.run_id }}.jsonl
+          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
         run: |
           set -euo pipefail
-          RAW_DB='${{ env.DATABASE_URL }}'
-          RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
+          # Sanitize DATABASE_URL (hapus kutip, matikan sslmode=require)
+          RAW_DB="${DATABASE_URL}"
+          RAW_DB="${RAW_DB%\"}"; RAW_DB="${RAW_DB#\"}"
           DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
           DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
+
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='$DB_URL_ESC' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
-          mkdir -p /deploy/migs && rm -rf /deploy/migs/work || true
-          cd /deploy/migs
-          tar -xzf /tmp/migs.tar.gz
-          apply_file() {
+          rm -rf /deploy/migs/work || true
+          mkdir -p /deploy/migs/work
+          tar -xzf /tmp/migs.tar.gz -C /deploy/migs/work
+          cd /deploy/migs/work
+
+          LOG="/deploy/migs/$OBS_LOG"
+          : > "$LOG"  # selalu buat file log
+
+          # Deteksi network Postgres (nama service 'db' hidup di network Docker)
+          PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
+          NET=""
+          if [ -n "$PG_CONT" ]; then
+            NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')"
+          fi
+
+          run_sql() {
             local f="$1"
-            local start end dur status=success
-            start=$(date +%s%3N)
-            if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
-            end=$(date +%s%3N); dur=$((end-start))
+            local rel="\${f#\$(pwd)/}"   # path relatif di volume /work
+            local t0 t1 dur status=success
+            t0=$(date +%s%3N)
+
+            if [ -n "$NET" ] && docker network inspect "$NET" >/dev/null 2>&1; then
+              docker run --rm --network "$NET" \
+                -e DATABASE_URL="$DATABASE_URL" -e FPATH="$rel" \
+                -v /deploy/migs/work:/work:ro postgres:16-alpine \
+                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
+            elif docker network inspect crive-stack_default >/dev/null 2>&1; then
+              docker run --rm --network crive-stack_default \
+                -e DATABASE_URL="$DATABASE_URL" -e FPATH="$rel" \
+                -v /deploy/migs/work:/work:ro postgres:16-alpine \
+                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
+            else
+              # Fallback host: ganti @db -> @127.0.0.1
+              URL="$DATABASE_URL"
+              if echo "$URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+                URL="$(echo "$URL" | sed 's/@db/@127.0.0.1/')"
+              fi
+              docker run --rm --network host \
+                -e DATABASE_URL="$URL" -e FPATH="$rel" \
+                -v /deploy/migs/work:/work:ro postgres:16-alpine \
+                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
+            fi || status=failure
+
+            t1=$(date +%s%3N); dur=$((t1-t0))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
-              "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
+              "$(date -u +%FT%TZ)" "$rel" "$dur" "$status" >> "$LOG"
             [ "$status" = success ]
           }
-          if ls sql/up/*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 sql/up/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
+
+          if [ -d sql/up ]; then
+            for f in $(ls -1 sql/up/*.sql 2>/dev/null | sort); do echo "[apply] $f"; run_sql "$f"; done
           elif [ -f sql/up.sql ]; then
-            echo "[apply] sql/up.sql"; apply_file "sql/up.sql"
+            echo "[apply] sql/up.sql"; run_sql "sql/up.sql"
           elif ls sql/*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 sql/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
+            for f in $(ls -1 sql/*.sql | sort); do echo "[apply] $f"; run_sql "$f"; done
           else
-            echo "No SQL found"; exit 0
+            printf '{"ts":"%s","info":"no_sql_found","status":"noop"}\n' "$(date -u +%FT%TZ)" >> "$LOG"
           fi
           REMOTE
 
