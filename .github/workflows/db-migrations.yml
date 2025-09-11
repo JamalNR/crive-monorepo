@@ -88,23 +88,36 @@ jobs:
         options: >-
           --health-cmd="pg_isready -U postgres -d crive"
           --health-interval=10s --health-timeout=5s --health-retries=30
-
+    
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crive
-
+      
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with: { version: 10 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: 'pnpm' }
-      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
+          
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      
       - name: Apply baseline + migrations (ephemeral DB)
+        shell: bash
         run: |
-          # baseline (opsional, kalau ada sql/up)
+          set -euo pipefail
           if ls sql/up/*.sql >/dev/null 2>&1; then
             for f in $(ls -1 sql/up/*.sql | sort); do
-              echo "[baseline] $f"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f";
+              echo "[baseline] $f"
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
             done
           fi
           node db/migrate.mjs --apply --no-advisory-lock
