@@ -108,7 +108,7 @@ jobs:
 
       - name: Install deps
         run: pnpm install --frozen-lockfile --ignore-scripts
-      
+        
       - name: Apply baseline + migrations (ephemeral DB)
         shell: bash
         run: |
