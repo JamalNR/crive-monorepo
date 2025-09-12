@@ -256,12 +256,14 @@ jobs:
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
       - name: Snapshot before migrate (PRD only)
-        if: env.TARGET == 'prd'
-        env: { BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }} }
+        if: ${{ env.TARGET == 'prd' }}
+        env: 
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
           set -eo pipefail
           BP="${BACKUP_PASSPHRASE-}"
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "env DATABASE_URL=\"$DATABASE_URL\" BACKUP_PASSPHRASE=\"$BP\" bash -se" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST"
+            "env DATABASE_URL=\"$DATABASE_URL\" BACKUP_PASSPHRASE=\"$BP\" bash -se" <<'REMOTE'
           set -euo pipefail
           : "${DATABASE_URL:?missing}"
           if [ -z "${BACKUP_PASSPHRASE:-}" ]; then
