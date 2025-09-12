@@ -2,10 +2,10 @@ name: DB Migrations
 
 on:
   pull_request:
-    paths: ["db/**", "sql/**", "scripts/db/**", ".github/workflows/db-migrations.yml"]
+    paths: ["db/**"]
   push:
     branches: ["main"]
-    paths: ["db/**", "sql/**", "scripts/db/**"]
+    paths: ["db/**"]
   workflow_dispatch:
     inputs:
       target:
@@ -28,6 +28,9 @@ permissions:
   contents: read
 
 jobs:
+  # ──────────────────────────────────────────────────────────────────────────────
+  # LINT & PLAN (PR / manual)
+  # ──────────────────────────────────────────────────────────────────────────────
   lint-plan:
     if: github.event_name == 'pull_request' || github.event.inputs.run_lint == 'true'
     runs-on: ubuntu-latest
@@ -38,41 +41,42 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: 'pnpm' }
       - run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Status
+        shell: bash
         run: |
           set -euo pipefail
           MIG=""
           for f in db/migrate.mjs scripts/db/migrate.mjs db/migrate.cjs scripts/db/migrate.cjs; do
-            [ -f "$f" ] && MIG="$f" && break
+            [[ -f "$f" ]] && MIG="$f" && break
           done
-          if [ -n "$MIG" ]; then
+          if [[ -n "$MIG" ]]; then
             echo "::notice::Using migrator: $MIG"
             node "$MIG" --status
           else
-            echo "::warning::No migrator found; showing file list only"
-            if [ -d db/migrations ]; then
-              ls -1 db/migrations | sort | sed 's/^/- /'
-            else
-              echo "(no db/migrations)"
-            fi
+            echo "::warning::No migrator found; listing migrations"
+            [[ -d db/migrations ]] && ls -1 db/migrations | sort | sed 's/^/- /' || echo "(no db/migrations)"
           fi
-          
+
       - name: Lint plan
+        shell: bash
         run: |
           set -euo pipefail
           MIG=""
           for f in db/migrate.mjs scripts/db/migrate.mjs db/migrate.cjs scripts/db/migrate.cjs; do
-            [ -f "$f" ] && MIG="$f" && break
+            [[ -f "$f" ]] && MIG="$f" && break
           done
-          if [ -n "$MIG" ]; then
+          if [[ -n "$MIG" ]]; then
             node "$MIG" --plan
           else
-            echo "::notice::Plan (fallback):"
+            echo "::notice::Plan (fallback)"
             find db/migrations -maxdepth 1 -name '*.sql' 2>/dev/null | sort | sed 's/^/- /' || true
           fi
-          
+
       - name: Lint migration files (naming, @down, no DROP)
+        shell: bash
         run: |
+          set -euo pipefail
           node -e "const fs=require('fs');const p='db/migrations';
           if(!fs.existsSync(p)){process.exit(0)}
           const bad=[];
@@ -83,30 +87,28 @@ jobs:
             if(/\bDROP\s+(TABLE|COLUMN)\b/i.test(t) && !t.includes('/*allow-drop*/')) bad.push('DROP found (no allow): '+f);
           }
           if(bad.length){console.error(bad.join('\n'));process.exit(1);} "
-      - name: Dry-run (plan only)
-        run: |
-          node -e "
-          const fs=require('fs');
-          const p='db/migrations';
-          if(!fs.existsSync(p)){ console.log('Migrasi terdeteksi: 0'); process.exit(0); }
-          const files=fs.readdirSync(p).filter(f=>f.endsWith('.sql')).sort();
-          console.log('Migrasi terdeteksi:', files.length);
-          files.forEach(f=>console.log('-', f));
-          "
-      - name: Summarize (lint)
-        if: always()
-        run: |
-          echo '### Lint summary' >> $GITHUB_STEP_SUMMARY
-          echo '- Status & Plan OK' >> $GITHUB_STEP_SUMMARY
 
-  # ---- 2) Compat Matrix: Postgres 15 + 16 + 17 saat PR ----
+      - name: Dry-run (plan only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d db/migrations ]]; then
+            echo "Migrasi terdeteksi: $(ls -1 db/migrations/*.sql 2>/dev/null | wc -l | tr -d ' ')"
+            ls -1 db/migrations/*.sql 2>/dev/null | sort | sed 's/^/- /' || true
+          else
+            echo "Migrasi terdeteksi: 0"
+          fi
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # COMPAT MATRIX (PR) – spin up ephemeral Postgres, apply baseline + migrations
+  # ──────────────────────────────────────────────────────────────────────────────
   compat-matrix:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: { pg: ['15','16','17'] }
-      matrix: { pg: ['15','16','17'] }
+      matrix:
+        pg: ['15','16','17']
     services:
       postgres:
         image: postgres:${{ matrix.pg }}
@@ -118,8 +120,6 @@ jobs:
         options: >-
           --health-cmd="pg_isready -U postgres"
           --health-interval=10s --health-timeout=5s --health-retries=20
-          --health-cmd="pg_isready -U postgres -d crive"
-          --health-interval=10s --health-timeout=5s --health-retries=30
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crive
     steps:
@@ -129,47 +129,48 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: 'pnpm' }
       - run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Apply baseline (sql/up/**)
+        shell: bash
         run: |
+          set -euo pipefail
           if ls sql/up/*.sql >/dev/null 2>&1; then
             for f in $(ls -1 sql/up/*.sql | sort); do
               echo "[baseline] $f"
               psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
             done
           fi
+
       - name: Apply migrations (ephemeral)
+        shell: bash
         run: |
           set -euo pipefail
-          CANDIDATES=(
-            db/migrate.mjs
-            db/migrate.cjs
-            db/migrate.js
-            scripts/db/migrate.mjs
-            scripts/db/migrate.cjs
-            scripts/db/migrate.js
-          )
-          FOUND=""
-          for f in "${CANDIDATES[@]}"; do
-            if [ -f "$f" ]; then FOUND="$f"; break; fi
-          done
-
-          if [ -n "$FOUND" ]; then
-            echo "::notice::Using migration runner: $FOUND"
-            node "$FOUND" --apply --no-advisory-lock
+          if [[ -f db/migrate.mjs ]]; then
+            node db/migrate.mjs --apply --no-advisory-lock
           else
-            echo "::warning::No migration runner found; applying raw SQL (@up only)"
             if ls db/migrations/*.sql >/dev/null 2>&1; then
               for f in $(ls -1 db/migrations/*.sql | sort); do
                 echo "[apply] $f"
-                # Kirim hanya bagian @up ke psql
+                # kirim hanya bagian @up
                 awk '/--[[:space:]]*@down/{exit} {print}' "$f" \
                   | psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f -
               done
-            else
-              echo "No db/migrations/*.sql found"; exit 1
             fi
           fi
-          
+
+      - name: FK index lint (optional)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f scripts/db/lint_fk_index.sql ]]; then
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/db/lint_fk_index.sql
+          else
+            echo "::notice::lint_fk_index skipped (script not found)"
+          fi
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # APPLY TO STAGING (main push / manual)
+  # ──────────────────────────────────────────────────────────────────────────────
   apply-stg:
     if: github.ref == 'refs/heads/main' || github.event.inputs.target == 'stg' || github.event.inputs.run_stg == 'true'
     runs-on: ubuntu-latest
@@ -182,35 +183,54 @@ jobs:
       DOPPLER_CONFIG: stg
     steps:
       - uses: actions/checkout@v4
+
       - name: Install psql
-        run: sudo apt-get update -y && sudo apt-get install -y postgresql-client
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+
       - name: Install Doppler CLI
         run: curl -sLf https://cli.doppler.com/install.sh | sudo sh
+
       - name: Install Doppler CLI action
         uses: dopplerhq/cli-action@v3
+
       - name: Load env from Doppler -> $GITHUB_ENV
+        shell: bash
         run: |
           set -euo pipefail
           doppler secrets download --no-file --format env \
             --project crive --config "${DOPPLER_CONFIG}" \
             | sed -E 's/^export[[:space:]]+//; s/^;*(.*)$/\1/' \
             >> "$GITHUB_ENV"
+
       - name: Prepare SSH
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
           echo "$SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+
       - name: Package SQL
-        run: tar -czf migs.tar.gz sql || true
-      - name: Upload package
+        shell: bash
         run: |
+          set -euo pipefail
+          tar -czf migs.tar.gz sql || true
+          ls -lah migs.tar.gz || true
+
+      - name: Upload package
+        shell: bash
+        run: |
+          set -euo pipefail
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
-          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz        
+          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
+
       - name: Apply SQL (via docker network) — STG + observability
-        env: 
-          OBS_LOG: migration-${{ github.run_id }}.jsonl
+        env:
+          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
+        shell: bash
         run: |
           set -euo pipefail
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
@@ -218,49 +238,48 @@ jobs:
           set -euo pipefail
           rm -rf /deploy/migs/work || true
           mkdir -p /deploy/migs/work
-          tar -xzf /tmp/migs.tar.gz -C /deploy/migs/work
+          tar -xzf /tmp/migs.tar.gz -C /deploy/migs/work || true
           cd /deploy/migs/work
           apply_file() {
-            local f="$1"; local start end dur status=success
+            local f="$1"
+            local start end dur status=success
             start=$(date +%s%3N)
             if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
               "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
-            [ "$status" = success ]
+            [[ "$status" = success ]]
           }
-          if [ -d sql/up ]; then
+          if [[ -d sql/up ]]; then
             for f in $(ls -1 sql/up/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
-          elif [ -f sql/up.sql ]; then
+          elif [[ -f sql/up.sql ]]; then
             echo "[apply] sql/up.sql"; apply_file "sql/up.sql"
           elif ls sql/*.sql >/dev/null 2>&1; then
             for f in $(ls -1 sql/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
           else
-            echo "No SQL found under sql/"; exit 0
+            echo "No SQL found under sql/"
           fi
           REMOTE
+
       - name: Fetch observability log (STG)
-        env: 
-          OBS_LOG: migration-${{ github.run_id }}.jsonl
+        env:
+          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
+
       - name: Upload observability artifact (STG)
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: migration-observability-stg-apply-stg-${{ github.run_attempt }}
           path: migration-${{ github.run_id }}.jsonl
           if-no-files-found: ignore
-          # ← unik per job & attempt
-          name: migration-observability-stg-${{ github.job }}-${{ github.run_attempt }}
-          path: "migration-${{ github.run_id }}.jsonl"
-          if-no-files-found: ignore
 
-  # ---- 4) Apply STG/PRD manual (tidak jalan di PR) + Snapshot PRD + Observability ----
+  # ──────────────────────────────────────────────────────────────────────────────
+  # MIGRATE (manual dispatch / push main)
+  # ──────────────────────────────────────────────────────────────────────────────
   migrate:
-    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.run_stg != 'true')
-        || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.target || 'prd' }}
     env:
       TARGET: ${{ github.event.inputs.target }}
       HOST: ${{ github.event.inputs.target == 'stg' && secrets.STG_HOST || secrets.PRD_HOST }}
@@ -270,63 +289,91 @@ jobs:
       DOPPLER_CONFIG: ${{ github.event.inputs.target == 'stg' && 'stg' || 'prd' }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Install psql
-        run: sudo apt-get update -y && sudo apt-get install -y postgresql-client
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client
+
       - name: Install Doppler CLI
         run: curl -sLf https://cli.doppler.com/install.sh | sudo sh
+
       - name: Install Doppler CLI
         uses: dopplerhq/cli-action@v3
+
       - name: Load env from Doppler → $GITHUB_ENV
+        shell: bash
         run: |
           set -euo pipefail
           doppler secrets download --no-file --format env \
             --project crive --config "${DOPPLER_CONFIG}" \
-          | sed -E 's/^export[[:space:]]+//; s/="(.*)"$/=\1/' \
-          >> "$GITHUB_ENV"
+            | sed -E 's/^export[[:space:]]+//; s/="(.*)"$/=\1/' \
+            >> "$GITHUB_ENV"
+
       - name: Prepare SSH
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
           echo "$SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+
       - name: Package SQL
-        run: tar -czf migs.tar.gz sql || true
-      - name: Upload package
+        shell: bash
         run: |
+          set -euo pipefail
+          tar -czf migs.tar.gz sql || true
+          ls -lah migs.tar.gz
+
+      - name: Upload package
+        shell: bash
+        run: |
+          set -euo pipefail
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
+
       - name: Snapshot before migrate (PRD only)
         if: ${{ env.TARGET == 'prd' }}
-        env: 
+        env:
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        shell: bash
         run: |
           set -eo pipefail
           BP="${BACKUP_PASSPHRASE-}"
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST"
+
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" \
             "env DATABASE_URL=\"$DATABASE_URL\" BACKUP_PASSPHRASE=\"$BP\" bash -se" <<'REMOTE'
           set -euo pipefail
           : "${DATABASE_URL:?missing}"
+
           if [ -z "${BACKUP_PASSPHRASE:-}" ]; then
             echo "::warning title=BACKUP_PASSPHRASE missing::Using ephemeral passphrase for snapshot"
             BACKUP_PASSPHRASE="$(openssl rand -hex 16)"
           fi
+
           mkdir -p /deploy/backups
           STAMP="$(date +'%Y%m%d-%H%M')"
           OUT="/deploy/backups/crive-${STAMP}.dump"
+
           PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
           NET=""
           if [ -n "$PG_CONT" ]; then
             NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')"
           fi
+
           SNAP_OK=0
           if [ -n "$NET" ] && docker network inspect "$NET" >/dev/null 2>&1; then
-            docker run --rm --network "$NET" -e DATABASE_URL="$DATABASE_URL" -v /deploy/backups:/backup \
+            docker run --rm --network "$NET" \
+              -e DATABASE_URL="$DATABASE_URL" \
+              -v /deploy/backups:/backup \
               postgres:alpine sh -lc 'pg_dump --no-owner --format=custom "$DATABASE_URL" -f /backup/out.dump'
             mv "/deploy/backups/out.dump" "$OUT"
             SNAP_OK=1
           elif docker network inspect crive-stack_default >/dev/null 2>&1; then
-            docker run --rm --network crive-stack_default -e DATABASE_URL="$DATABASE_URL" -v /deploy/backups:/backup \
+            docker run --rm --network crive-stack_default \
+              -e DATABASE_URL="$DATABASE_URL" \
+              -v /deploy/backups:/backup \
               postgres:alpine sh -lc 'pg_dump --no-owner --format=custom "$DATABASE_URL" -f /backup/out.dump'
             mv "/deploy/backups/out.dump" "$OUT"
             SNAP_OK=1
@@ -335,22 +382,34 @@ jobs:
             if echo "$URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
               URL="$(echo "$URL" | sed 's/@db/@127.0.0.1/')"
             fi
-            if pg_dump --no-owner --format=custom "$URL" -f "$OUT"; then SNAP_OK=1; fi
+            if pg_dump --no-owner --format=custom "$URL" -f "$OUT"; then
+              SNAP_OK=1
+            fi
           fi
+
           if [ "$SNAP_OK" -ne 1 ]; then
-            echo "::error title=Snapshot failed::Unable to dump database on any network mode"; exit 1
+            echo "::error title=Snapshot failed::Unable to dump database on any network mode"
+            exit 1
           fi
+
           gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" -c "$OUT"
-          sha256sum "$OUT.gpg" > "$OUT.gpg.sha256" || shasum -a256 "$OUT.gpg" > "$OUT.gpg.sha256"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$OUT.gpg" > "$OUT.gpg.sha256"
+          else
+            shasum -a 256 "$OUT.gpg" > "$OUT.gpg.sha256"
+          fi
           rm -f "$OUT"
           echo "Snapshot OK: $OUT.gpg"
           REMOTE
+
       - name: Apply SQL (via docker network) + observability
-        env: 
-          OBS_LOG: migration-${{ github.run_id }}.jsonl
+        env:
+          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
+        shell: bash
         run: |
           set -euo pipefail
-          RAW_DB='${{ env.DATABASE_URL }}'; RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
+          RAW_DB='${{ env.DATABASE_URL }}'
+          RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
           DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
           DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
@@ -360,36 +419,35 @@ jobs:
           cd /deploy/migs
           tar -xzf /tmp/migs.tar.gz
           apply_file() {
-            local f="$1"; local start end dur status=success
+            local f="$1"
+            local start end dur status=success
             start=$(date +%s%3N)
             if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
               "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
-            [ "$status" = success ]
+            [[ "$status" = success ]]
           }
           if ls sql/up/*.sql >/dev/null 2>&1; then
             for f in $(ls -1 sql/up/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
-          elif [ -f sql/up.sql ]; then
+          elif [[ -f sql/up.sql ]]; then
             echo "[apply] sql/up.sql"; apply_file "sql/up.sql"
           elif ls sql/*.sql >/dev/null 2>&1; then
             for f in $(ls -1 sql/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
           else
-            echo "No SQL found"; exit 0
+            echo "No SQL found"
           fi
           REMOTE
+
       - name: Fetch observability log (STG/PRD)
-        env: 
-          OBS_LOG: migration-${{ github.run_id }}.jsonl
+        env:
+          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
+
       - name: Upload observability artifact
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: migration-observability-${{ env.TARGET || 'auto' }}-migrate-${{ github.run_attempt }}
+          name: migration-observability-${{ github.event.inputs.target || 'auto' }}-migrate-${{ github.run_attempt }}
           path: migration-${{ github.run_id }}.jsonl
-          if-no-files-found: ignore
-          # ← unik per target, job, attempt
-          name: migration-observability-${{ env.TARGET || 'auto' }}-${{ github.job }}-${{ github.run_attempt }}
-          path: "migration-${{ github.run_id }}.jsonl"
           if-no-files-found: ignore
