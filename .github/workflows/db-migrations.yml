@@ -70,11 +70,13 @@ jobs:
           echo '### Lint summary' >> $GITHUB_STEP_SUMMARY
           echo '- Status & Plan OK' >> $GITHUB_STEP_SUMMARY
 
+  # ---- 2) Compat Matrix: Postgres 15 + 16 + 17 saat PR ----
   compat-matrix:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      matrix: { pg: ['15','16','17'] }
       matrix: { pg: ['15','16','17'] }
     services:
       postgres:
@@ -87,6 +89,8 @@ jobs:
         options: >-
           --health-cmd="pg_isready -U postgres"
           --health-interval=10s --health-timeout=5s --health-retries=20
+          --health-cmd="pg_isready -U postgres -d crive"
+          --health-interval=10s --health-timeout=5s --health-retries=30
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crive
     steps:
@@ -111,6 +115,19 @@ jobs:
       - name: Summarize (matrix)
         run: |
           echo "### Compat Matrix PG ${{ matrix.pg }} ✅" >> $GITHUB_STEP_SUMMARY
+      - name: Apply migrations on ephemeral DB
+        run: |
+          # baseline (opsional, kalau ada sql/up)
+          if ls sql/up/*.sql >/dev/null 2>&1; then
+            for f in $(ls -1 sql/up/*.sql | sort); do
+              echo "[baseline] $f"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f";
+            done
+          fi
+          node db/migrate.mjs --apply --no-advisory-lock
+      - name: Schema smoke check
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select version();"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "\dt+"
 
   apply-stg:
     if: github.ref == 'refs/heads/main' || github.event.inputs.target == 'stg' || github.event.inputs.run_stg == 'true'
@@ -190,7 +207,12 @@ jobs:
           name: migration-observability-stg-apply-stg-${{ github.run_attempt }}
           path: migration-${{ github.run_id }}.jsonl
           if-no-files-found: ignore
+          # ← unik per job & attempt
+          name: migration-observability-stg-${{ github.job }}-${{ github.run_attempt }}
+          path: "migration-${{ github.run_id }}.jsonl"
+          if-no-files-found: ignore
 
+  # ---- 4) Apply STG/PRD manual (tidak jalan di PR) + Snapshot PRD + Observability ----
   migrate:
     if: (github.event_name == 'workflow_dispatch' && github.event.inputs.run_stg != 'true')
         || (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -319,4 +341,8 @@ jobs:
         with:
           name: migration-observability-${{ env.TARGET || 'auto' }}-migrate-${{ github.run_attempt }}
           path: migration-${{ github.run_id }}.jsonl
+          if-no-files-found: ignore
+          # ← unik per target, job, attempt
+          name: migration-observability-${{ env.TARGET || 'auto' }}-${{ github.job }}-${{ github.run_attempt }}
+          path: "migration-${{ github.run_id }}.jsonl"
           if-no-files-found: ignore
