@@ -205,11 +205,10 @@ jobs:
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
 
       - name: Package SQL
-        shell: bash
         run: |
           set -euo pipefail
-          tar -czf migs.tar.gz sql || true
-          ls -lah migs.tar.gz || true
+          tar -czf migs.tar.gz sql || { echo "No sql/ dir; creating empty package"; mkdir -p sql; tar -czf migs.tar.gz sql; }
+          ls -lah migs.tar.gz
 
       - name: Upload package
         shell: bash
@@ -223,8 +222,10 @@ jobs:
           OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl
         run: |
           set -euo pipefail
+          # kirim paket ke host deploy
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
 
+          # eksekusi di host deploy
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='${DATABASE_URL//sslmode=require/sslmode=disable}' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
 
@@ -232,13 +233,15 @@ jobs:
           rm -rf "$BASE" && mkdir -p "$BASE"
           tar -xzf /tmp/migs.tar.gz -C "$BASE"
 
-          # --- deteksi network docker postgres
+          # --- cari network docker postgres (agar host 'db' valid)
           PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
           NET=""
           if [ -n "$PG_CONT" ]; then
             NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')"
           fi
-          [ -z "$NET" ] && docker network inspect crive-stack_default >/dev/null 2>&1 && NET="crive-stack_default" || true
+          if [ -z "$NET" ] && docker network inspect crive-stack_default >/dev/null 2>&1; then
+            NET="crive-stack_default"
+          fi
 
           # --- normalisasi URL
           DB_URL="${DATABASE_URL//sslmode=require/sslmode=disable}"
@@ -246,38 +249,38 @@ jobs:
             DB_URL="$(echo "$DB_URL" | sed 's/@db/@127.0.0.1/')"
           fi
 
+          # --- fungsi psql; SELALU pakai container
           run_psql() {
-            local file="$1"
+            local abs="$1"
             if [ -n "$NET" ]; then
               docker run --rm --network "$NET" \
-                -e PSQLRC=/dev/null \
-                -v "$BASE":/work \
-                postgres:alpine sh -lc "psql \"$DB_URL\" -v ON_ERROR_STOP=1 -f \"/work/${file#$BASE/}\""
+                -v "$BASE":/work postgres:alpine \
+                sh -lc "psql \"$DB_URL\" -v ON_ERROR_STOP=1 -f \"/work/${abs#$BASE/}\""
             else
-              psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$file"
+              docker run --rm --network host \
+                -v "$BASE":/work postgres:alpine \
+                sh -lc "psql \"$DB_URL\" -v ON_ERROR_STOP=1 -f \"/work/${abs#$BASE/}\""
             fi
           }
 
-          apply_file() {
-            local f="$1"
-            local start end dur status=success
-            start=$(date +%s%3N)
+          # --- apply semua SQL dengan ABSOLUTE path + observability
+          LOG="/deploy/migs/$OBS_LOG"
+          touch "$LOG"
+          mapfile -t FILES < <(find "$BASE/sql" -maxdepth 2 -type f -name '*.sql' | sort || true)
+
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No SQL found under $BASE/sql/"; exit 0
+          fi
+
+          for f in "${FILES[@]}"; do
+            echo "[apply] $f"
+            start=$(date +%s%3N); status=success
             if run_psql "$f"; then :; else status=failure; fi
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
-              "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
+              "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "$LOG"
             [ "$status" = success ]
-          }
-
-          if [ -d "$BASE/sql/up" ] && ls "$BASE/sql/up/"*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 "$BASE/sql/up/"*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
-          elif [ -f "$BASE/sql/up.sql" ]; then
-            echo "[apply] $BASE/sql/up.sql"; apply_file "$BASE/sql/up.sql"
-          elif ls "$BASE/sql/"*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 "$BASE/sql/"*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
-          else
-            echo "No SQL found under $BASE/sql/"; exit 0
-          fi
+          done
           REMOTE
 
       - name: Fetch observability log (STG)
@@ -288,7 +291,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: migration-observability-stg-${{ github.job }}
+          name: migration-observability-stg-${{ github.run_id }}-${{ github.job }}
           path: migration-${{ github.run_id }}-${{ github.job }}.jsonl
           if-no-files-found: ignore
 
@@ -335,10 +338,9 @@ jobs:
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
 
       - name: Package SQL
-        shell: bash
         run: |
           set -euo pipefail
-          tar -czf migs.tar.gz sql || true
+          tar -czf migs.tar.gz sql || { echo "No sql/ dir; creating empty package"; mkdir -p sql; tar -czf migs.tar.gz sql; }
           ls -lah migs.tar.gz
 
       - name: Upload package
@@ -422,9 +424,10 @@ jobs:
           OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl
         run: |
           set -euo pipefail
-          RAW_DB='${{ env.DATABASE_URL }}'; RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
-          DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
+          RAW='${{ env.DATABASE_URL }}'; RAW=${RAW#\"}; RAW=${RAW%\"}
+          DB_URL="${RAW//sslmode=require/sslmode=disable}"
           DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
+
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
 
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='$DB_URL_ESC' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
@@ -439,7 +442,9 @@ jobs:
           if [ -n "$PG_CONT" ]; then
             NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')"
           fi
-          [ -z "$NET" ] && docker network inspect crive-stack_default >/dev/null 2>&1 && NET="crive-stack_default" || true
+          if [ -z "$NET" ] && docker network inspect crive-stack_default >/dev/null 2>&1; then
+            NET="crive-stack_default"
+          fi
 
           DB_URL="${DATABASE_URL//sslmode=require/sslmode=disable}"
           if [ -z "$NET" ] && echo "$DB_URL" | grep -E '://[^@]*@db(:|/)' >/dev/null; then
@@ -447,37 +452,35 @@ jobs:
           fi
 
           run_psql() {
-            local file="$1"
+            local abs="$1"
             if [ -n "$NET" ]; then
               docker run --rm --network "$NET" \
-                -e PSQLRC=/dev/null \
-                -v "$BASE":/work \
-                postgres:alpine sh -lc "psql \"$DB_URL\" -v ON_ERROR_STOP=1 -f \"/work/${file#$BASE/}\""
+                -v "$BASE":/work postgres:alpine \
+                sh -lc "psql \"$DB_URL\" -v ON_ERROR_STOP=1 -f \"/work/${abs#$BASE/}\""
             else
-              psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$file"
+              docker run --rm --network host \
+                -v "$BASE":/work postgres:alpine \
+                sh -lc "psql \"$DB_URL\" -v ON_ERROR_STOP=1 -f \"/work/${abs#$BASE/}\""
             fi
           }
 
-          apply_file() {
-            local f="$1"
-            local start end dur status=success
-            start=$(date +%s%3N)
+          LOG="/deploy/migs/$OBS_LOG"
+          touch "$LOG"
+          mapfile -t FILES < <(find "$BASE/sql" -maxdepth 2 -type f -name '*.sql' | sort || true)
+
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No SQL found under $BASE/sql/"; exit 0
+          fi
+
+          for f in "${FILES[@]}"; do
+            echo "[apply] $f"
+            start=$(date +%s%3N); status=success
             if run_psql "$f"; then :; else status=failure; fi
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
-              "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
+              "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "$LOG"
             [ "$status" = success ]
-          }
-
-          if [ -d "$BASE/sql/up" ] && ls "$BASE/sql/up/"*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 "$BASE/sql/up/"*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
-          elif [ -f "$BASE/sql/up.sql" ]; then
-            echo "[apply] $BASE/sql/up.sql"; apply_file "$BASE/sql/up.sql"
-          elif ls "$BASE/sql/"*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 "$BASE/sql/"*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
-          else
-            echo "No SQL found under $BASE/sql/"; exit 0
-          fi
+          done
           REMOTE
 
       - name: Fetch observability log (STG/PRD)
@@ -488,6 +491,6 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: migration-observability-${{ github.event.inputs.target || 'auto' }}-${{ github.job }}
+          name: migration-observability-${{ github.event.inputs.target || 'auto' }}-${{ github.run_id }}-${{ github.job }}
           path: migration-${{ github.run_id }}-${{ github.job }}.jsonl
           if-no-files-found: ignore
