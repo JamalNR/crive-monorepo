@@ -177,7 +177,8 @@ jobs:
           REMOTE
 
       - name: Fetch observability log (STG)
-        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
+        env:
+          OBS_LOG: migration-${{ github.run_id }}.jsonl
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
 
       - uses: actions/upload-artifact@v4
@@ -341,7 +342,8 @@ jobs:
           REMOTE
 
       - name: Fetch observability log (STG/PRD)
-        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
+        env:
+          OBS_LOG: migration-${{ github.run_id }}.jsonl
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
 
       - uses: actions/upload-artifact@v4
