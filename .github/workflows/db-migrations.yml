@@ -76,8 +76,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: { pg: ['15','16','17'] }
-      matrix: { pg: ['15','16','17'] }
+      matrix:
+        pg: ['15','16','17']
     services:
       postgres:
         image: postgres:${{ matrix.pg }}
@@ -89,8 +89,6 @@ jobs:
         options: >-
           --health-cmd="pg_isready -U postgres"
           --health-interval=10s --health-timeout=5s --health-retries=20
-          --health-cmd="pg_isready -U postgres -d crive"
-          --health-interval=10s --health-timeout=5s --health-retries=30
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crive
     steps:
@@ -203,15 +201,11 @@ jobs:
           OBS_LOG: migration-${{ github.run_id }}.jsonl
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
       - name: Upload observability artifact (STG)
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: migration-observability-stg-apply-stg-${{ github.run_attempt }}
           path: migration-${{ github.run_id }}.jsonl
-          if-no-files-found: ignore
-          # ← unik per job & attempt
-          name: migration-observability-stg-${{ github.job }}-${{ github.run_attempt }}
-          path: "migration-${{ github.run_id }}.jsonl"
           if-no-files-found: ignore
 
   # ---- 4) Apply STG/PRD manual (tidak jalan di PR) + Snapshot PRD + Observability ----
@@ -342,13 +336,9 @@ jobs:
           OBS_LOG: migration-${{ github.run_id }}.jsonl
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
       - name: Upload observability artifact
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: migration-observability-${{ env.TARGET || 'auto' }}-migrate-${{ github.run_attempt }}
           path: migration-${{ github.run_id }}.jsonl
-          if-no-files-found: ignore
-          # ← unik per target, job, attempt
-          name: migration-observability-${{ env.TARGET || 'auto' }}-${{ github.job }}-${{ github.run_attempt }}
-          path: "migration-${{ github.run_id }}.jsonl"
           if-no-files-found: ignore
