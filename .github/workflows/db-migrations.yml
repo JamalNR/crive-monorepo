@@ -220,29 +220,42 @@ jobs:
 
       - name: Apply SQL (via docker network) — STG + observability
         env:
-          OBS_LOG: migration-${{ github.run_id }}.jsonl
+          OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl
         run: |
           set -euo pipefail
+          # kirim paket
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
+
+          # jalankan di remote
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='${DATABASE_URL//sslmode=require/sslmode=disable}' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
+
+          # --- siapkan workspace
           BASE="/deploy/migs/work"
           rm -rf "$BASE" && mkdir -p "$BASE"
           tar -xzf /tmp/migs.tar.gz -C "$BASE"
 
+          # --- sanitasi DATABASE_URL (host 'db' -> 127.0.0.1 bila bukan dalam docker-net)
+          DB_URL="${DATABASE_URL}"
+          if echo "$DB_URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+            DB_URL="$(echo "$DB_URL" | sed 's/@db/@127.0.0.1/')"
+          fi
+
+          # --- fungsi apply + logging
           apply_file() {
             local f="$1"
             local start end dur status=success
             start=$(date +%s%3N)
-            if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
+            if psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
               "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
             [ "$status" = success ]
           }
 
-          if [ -d "$BASE/sql/up" ]; then
-            for f in $(ls -1 "$BASE/sql/up/"*.sql 2>/dev/null | sort); do echo "[apply] $f"; apply_file "$f"; done
+          # --- eksekusi berurutan (utamakan sql/up/*.sql)
+          if [ -d "$BASE/sql/up" ] && ls "$BASE/sql/up/"*.sql >/dev/null 2>&1; then
+            for f in $(ls -1 "$BASE/sql/up/"*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
           elif [ -f "$BASE/sql/up.sql" ]; then
             echo "[apply] $BASE/sql/up.sql"; apply_file "$BASE/sql/up.sql"
           elif ls "$BASE/sql/"*.sql >/dev/null 2>&1; then
@@ -254,15 +267,15 @@ jobs:
 
       - name: Fetch observability log (STG)
         env:
-          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
+          OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
 
       - name: Upload observability artifact (STG)
-        if: always()
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: migration-observability-stg-apply-stg-${{ github.run_attempt }}
-          path: migration-${{ github.run_id }}.jsonl
+          name: migration-observability-stg-${{ github.job }}
+          path: migration-${{ github.run_id }}-${{ github.job }}.jsonl
           if-no-files-found: ignore
 
   migrate:
@@ -392,34 +405,45 @@ jobs:
 
       - name: Apply SQL (via docker network) + observability
         env:
-          OBS_LOG: migration-${{ github.run_id }}.jsonl
+          OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl
         run: |
           set -euo pipefail
+          # ambil & bersihkan DB URL dari env (hapus quotes & sslmode=require)
           RAW_DB='${{ env.DATABASE_URL }}'
           RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
           DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
           DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
 
+          # kirim paket
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
+
+          # remote exec
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='$DB_URL_ESC' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
+
           BASE="/deploy/migs/work"
           rm -rf "$BASE" && mkdir -p "$BASE"
           tar -xzf /tmp/migs.tar.gz -C "$BASE"
+
+          # host 'db' -> 127.0.0.1 jika perlu
+          DB_URL="${DATABASE_URL}"
+          if echo "$DB_URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+            DB_URL="$(echo "$DB_URL" | sed 's/@db/@127.0.0.1/')"
+          fi
 
           apply_file() {
             local f="$1"
             local start end dur status=success
             start=$(date +%s%3N)
-            if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
+            if psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
               "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
             [ "$status" = success ]
           }
 
-          if [ -d "$BASE/sql/up" ]; then
-            for f in $(ls -1 "$BASE/sql/up/"*.sql 2>/dev/null | sort); do echo "[apply] $f"; apply_file "$f"; done
+          if [ -d "$BASE/sql/up" ] && ls "$BASE/sql/up/"*.sql >/dev/null 2>&1; then
+            for f in $(ls -1 "$BASE/sql/up/"*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
           elif [ -f "$BASE/sql/up.sql" ]; then
             echo "[apply] $BASE/sql/up.sql"; apply_file "$BASE/sql/up.sql"
           elif ls "$BASE/sql/"*.sql >/dev/null 2>&1; then
@@ -431,13 +455,13 @@ jobs:
 
       - name: Fetch observability log (STG/PRD)
         env:
-          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
+          OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
 
       - name: Upload observability artifact
-        if: always()
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: migration-observability-${{ github.event.inputs.target || 'auto' }}-migrate-${{ github.run_attempt }}
-          path: migration-${{ github.run_id }}.jsonl
+          name: migration-observability-${{ github.event.inputs.target || 'auto' }}-${{ github.job }}
+          path: migration-${{ github.run_id }}-${{ github.job }}.jsonl
           if-no-files-found: ignore
