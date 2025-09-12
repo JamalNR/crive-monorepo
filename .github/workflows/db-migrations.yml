@@ -231,6 +231,14 @@ jobs:
 
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DB_B64='$DB_B64' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
+          # ── sanitize DATABASE_URL dari Doppler (hapus quote & sslmode=require)
+          RAW_DB='${{ env.DATABASE_URL }}'
+          RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
+          DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
+          DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
+
+          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='$DB_URL_ESC' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
           # decode url
           DATABASE_URL="$(printf '%s' "$DB_B64" | base64 -d 2>/dev/null || printf '%s' "$DB_B64" | base64 --decode)"
@@ -240,19 +248,22 @@ jobs:
           tar -xzf /tmp/migs.tar.gz -C /deploy/migs/work || true
           cd /deploy/migs/work
 
-          # detect docker network of Postgres
           PG_CONT=$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)
           NET=""
           if [ -n "$PG_CONT" ]; then
             NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')
           fi
-
           adjust_url() {
             local u="$1"
             if echo "$u" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
               echo "$u" | sed 's/@db/@127.0.0.1/'
             else
               echo "$u"
+            local url="$1"
+            if echo "$url" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+              echo "$url" | sed 's/@db/@127.0.0.1/'
+            else
+              echo "$url"
             fi
           }
 
@@ -266,6 +277,9 @@ jobs:
                 sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$1"' _ "$f" || status=failure
             else
               psql "$(adjust_url "$DATABASE_URL")" -v ON_ERROR_STOP=1 -f "$f" || status=failure
+            fi
+              local URL="$(adjust_url "$DATABASE_URL")"
+              psql "$URL" -v ON_ERROR_STOP=1 -f "$f" || status=failure
             fi
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
@@ -431,6 +445,10 @@ jobs:
           RAW='${{ env.DATABASE_URL }}'; RAW=${RAW#\"}; RAW=${RAW%\"}
           URL="${RAW//sslmode=require/sslmode=disable}"
           DB_B64=$(printf '%s' "$URL" | base64 | tr -d '\n')
+          RAW_DB='${{ env.DATABASE_URL }}'
+          RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
+          DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
+          DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
 
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DB_B64='$DB_B64' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
@@ -446,13 +464,17 @@ jobs:
           if [ -n "$PG_CONT" ]; then
             NET=$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')
           fi
-
           adjust_url() {
             local u="$1"
             if echo "$u" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
               echo "$u" | sed 's/@db/@127.0.0.1/'
             else
               echo "$u"
+            local url="$1"
+            if echo "$url" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+              echo "$url" | sed 's/@db/@127.0.0.1/'
+            else
+              echo "$url"
             fi
           }
 
@@ -466,6 +488,9 @@ jobs:
                 sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$1"' _ "$f" || status=failure
             else
               psql "$(adjust_url "$DATABASE_URL")" -v ON_ERROR_STOP=1 -f "$f" || status=failure
+            fi
+              local URL="$(adjust_url "$DATABASE_URL")"
+              psql "$URL" -v ON_ERROR_STOP=1 -f "$f" || status=failure
             fi
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
