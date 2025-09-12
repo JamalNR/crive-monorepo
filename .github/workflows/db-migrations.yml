@@ -28,9 +28,6 @@ permissions:
   contents: read
 
 jobs:
-  # ──────────────────────────────────────────────────────────────────────────────
-  # LINT & PLAN (PR / manual)
-  # ──────────────────────────────────────────────────────────────────────────────
   lint-plan:
     if: github.event_name == 'pull_request' || github.event.inputs.run_lint == 'true'
     runs-on: ubuntu-latest
@@ -99,9 +96,6 @@ jobs:
             echo "Migrasi terdeteksi: 0"
           fi
 
-  # ──────────────────────────────────────────────────────────────────────────────
-  # COMPAT MATRIX (PR) – spin up ephemeral Postgres, apply baseline + migrations
-  # ──────────────────────────────────────────────────────────────────────────────
   compat-matrix:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -168,9 +162,6 @@ jobs:
             echo "::notice::lint_fk_index skipped (script not found)"
           fi
 
-  # ──────────────────────────────────────────────────────────────────────────────
-  # APPLY TO STAGING (main push / manual)
-  # ──────────────────────────────────────────────────────────────────────────────
   apply-stg:
     if: github.ref == 'refs/heads/main' || github.event.inputs.target == 'stg' || github.event.inputs.run_stg == 'true'
     runs-on: ubuntu-latest
@@ -274,9 +265,6 @@ jobs:
           path: migration-${{ github.run_id }}.jsonl
           if-no-files-found: ignore
 
-  # ──────────────────────────────────────────────────────────────────────────────
-  # MIGRATE (manual dispatch / push main)
-  # ──────────────────────────────────────────────────────────────────────────────
   migrate:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
