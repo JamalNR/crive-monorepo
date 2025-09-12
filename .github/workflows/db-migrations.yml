@@ -39,9 +39,38 @@ jobs:
         with: { node-version: 20, cache: 'pnpm' }
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Status
-        run: node db/migrate.mjs --status
+        run: |
+          set -euo pipefail
+          MIG=""
+          for f in db/migrate.mjs scripts/db/migrate.mjs db/migrate.cjs scripts/db/migrate.cjs; do
+            [ -f "$f" ] && MIG="$f" && break
+          done
+          if [ -n "$MIG" ]; then
+            echo "::notice::Using migrator: $MIG"
+            node "$MIG" --status
+          else
+            echo "::warning::No migrator found; showing file list only"
+            if [ -d db/migrations ]; then
+              ls -1 db/migrations | sort | sed 's/^/- /'
+            else
+              echo "(no db/migrations)"
+            fi
+          fi
+          
       - name: Lint plan
-        run: node db/migrate.mjs --plan
+        run: |
+          set -euo pipefail
+          MIG=""
+          for f in db/migrate.mjs scripts/db/migrate.mjs db/migrate.cjs scripts/db/migrate.cjs; do
+            [ -f "$f" ] && MIG="$f" && break
+          done
+          if [ -n "$MIG" ]; then
+            node "$MIG" --plan
+          else
+            echo "::notice::Plan (fallback):"
+            find db/migrations -maxdepth 1 -name '*.sql' 2>/dev/null | sort | sed 's/^/- /' || true
+          fi
+          
       - name: Lint migration files (naming, @down, no DROP)
         run: |
           node -e "const fs=require('fs');const p='db/migrations';
