@@ -167,6 +167,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
+          
       - name: Apply SQL (via docker network) — STG + observability
         env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
         run: |
