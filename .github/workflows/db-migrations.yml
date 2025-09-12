@@ -224,21 +224,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # ── sanitize DATABASE_URL dari Doppler (hapus quote & sslmode=require)
-          RAW_DB='${{ env.DATABASE_URL }}'
-          RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
-          DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
-          DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
+          # — sanitize DATABASE_URL dari Doppler (hapus quote & sslmode=require)
+          RAW='${{ env.DATABASE_URL }}'; RAW=${RAW#\"}; RAW=${RAW%\"}
+          URL="${RAW//sslmode=require/sslmode=disable}"
+          DB_B64=$(printf '%s' "$URL" | base64 | tr -d '\n')
 
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='$DB_URL_ESC' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DB_B64='$DB_B64' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
+          # decode url
+          DATABASE_URL="$(printf '%s' "$DB_B64" | base64 -d 2>/dev/null || printf '%s' "$DB_B64" | base64 --decode)"
+
           rm -rf /deploy/migs/work || true
           mkdir -p /deploy/migs/work
           tar -xzf /tmp/migs.tar.gz -C /deploy/migs/work || true
           cd /deploy/migs/work
 
-          # ── deteksi network Postgres
+          # detect docker network of Postgres
           PG_CONT=$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)
           NET=""
           if [ -n "$PG_CONT" ]; then
@@ -246,29 +248,25 @@ jobs:
           fi
 
           adjust_url() {
-            local url="$1"
-            if echo "$url" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
-              echo "$url" | sed 's/@db/@127.0.0.1/'
+            local u="$1"
+            if echo "$u" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+              echo "$u" | sed 's/@db/@127.0.0.1/'
             else
-              echo "$url"
+              echo "$u"
             fi
           }
 
           apply_file() {
-            local f="$1"
-            local start end dur status=success
+            local f="$1" start end dur status=success
             start=$(date +%s%3N)
-
             if [ -n "$NET" ] && docker network inspect "$NET" >/dev/null 2>&1; then
               docker run --rm --network "$NET" \
                 -e DATABASE_URL="$DATABASE_URL" \
                 -v "$PWD:/work:ro" postgres:16-alpine \
                 sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$1"' _ "$f" || status=failure
             else
-              local URL="$(adjust_url "$DATABASE_URL")"
-              psql "$URL" -v ON_ERROR_STOP=1 -f "$f" || status=failure
+              psql "$(adjust_url "$DATABASE_URL")" -v ON_ERROR_STOP=1 -f "$f" || status=failure
             fi
-
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
               "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
@@ -430,14 +428,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          RAW_DB='${{ env.DATABASE_URL }}'
-          RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
-          DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
-          DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
+          RAW='${{ env.DATABASE_URL }}'; RAW=${RAW#\"}; RAW=${RAW%\"}
+          URL="${RAW//sslmode=require/sslmode=disable}"
+          DB_B64=$(printf '%s' "$URL" | base64 | tr -d '\n')
 
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='$DB_URL_ESC' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DB_B64='$DB_B64' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
+          DATABASE_URL="$(printf '%s' "$DB_B64" | base64 -d 2>/dev/null || printf '%s' "$DB_B64" | base64 --decode)"
+
           mkdir -p /deploy/migs && rm -rf /deploy/migs/work || true
           cd /deploy/migs
           tar -xzf /tmp/migs.tar.gz
@@ -449,29 +448,25 @@ jobs:
           fi
 
           adjust_url() {
-            local url="$1"
-            if echo "$url" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
-              echo "$url" | sed 's/@db/@127.0.0.1/'
+            local u="$1"
+            if echo "$u" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+              echo "$u" | sed 's/@db/@127.0.0.1/'
             else
-              echo "$url"
+              echo "$u"
             fi
           }
 
           apply_file() {
-            local f="$1"
-            local start end dur status=success
+            local f="$1" start end dur status=success
             start=$(date +%s%3N)
-
             if [ -n "$NET" ] && docker network inspect "$NET" >/dev/null 2>&1; then
               docker run --rm --network "$NET" \
                 -e DATABASE_URL="$DATABASE_URL" \
                 -v "$PWD/sql:/work/sql:ro" postgres:16-alpine \
                 sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$1"' _ "$f" || status=failure
             else
-              local URL="$(adjust_url "$DATABASE_URL")"
-              psql "$URL" -v ON_ERROR_STOP=1 -f "$f" || status=failure
+              psql "$(adjust_url "$DATABASE_URL")" -v ON_ERROR_STOP=1 -f "$f" || status=failure
             fi
-
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
               "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
