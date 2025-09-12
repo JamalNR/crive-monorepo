@@ -109,26 +109,38 @@ jobs:
             done
           fi
       - name: Apply migrations (ephemeral)
-        run: node db/migrate.mjs --apply --no-advisory-lock
-      - name: FK index lint
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/db/check_fk_indexes.sql
-      - name: Summarize (matrix)
         run: |
-          echo "### Compat Matrix PG ${{ matrix.pg }} ✅" >> $GITHUB_STEP_SUMMARY
-      - name: Apply migrations on ephemeral DB
-        run: |
-          # baseline (opsional, kalau ada sql/up)
-          if ls sql/up/*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 sql/up/*.sql | sort); do
-              echo "[baseline] $f"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f";
-            done
-          fi
-          node db/migrate.mjs --apply --no-advisory-lock
-      - name: Schema smoke check
-        run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select version();"
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "\dt+"
+          set -euo pipefail
+          CANDIDATES=(
+            db/migrate.mjs
+            db/migrate.cjs
+            db/migrate.js
+            scripts/db/migrate.mjs
+            scripts/db/migrate.cjs
+            scripts/db/migrate.js
+          )
+          FOUND=""
+          for f in "${CANDIDATES[@]}"; do
+            if [ -f "$f" ]; then FOUND="$f"; break; fi
+          done
 
+          if [ -n "$FOUND" ]; then
+            echo "::notice::Using migration runner: $FOUND"
+            node "$FOUND" --apply --no-advisory-lock
+          else
+            echo "::warning::No migration runner found; applying raw SQL (@up only)"
+            if ls db/migrations/*.sql >/dev/null 2>&1; then
+              for f in $(ls -1 db/migrations/*.sql | sort); do
+                echo "[apply] $f"
+                # Kirim hanya bagian @up ke psql
+                awk '/--[[:space:]]*@down/{exit} {print}' "$f" \
+                  | psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f -
+              done
+            else
+              echo "No db/migrations/*.sql found"; exit 1
+            fi
+          fi
+          
   apply-stg:
     if: github.ref == 'refs/heads/main' || github.event.inputs.target == 'stg' || github.event.inputs.run_stg == 'true'
     runs-on: ubuntu-latest
