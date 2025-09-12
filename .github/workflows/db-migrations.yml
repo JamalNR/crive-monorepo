@@ -223,37 +223,52 @@ jobs:
           OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl
         run: |
           set -euo pipefail
-          # kirim paket
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
 
-          # jalankan di remote
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='${DATABASE_URL//sslmode=require/sslmode=disable}' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
 
-          # --- siapkan workspace
           BASE="/deploy/migs/work"
           rm -rf "$BASE" && mkdir -p "$BASE"
           tar -xzf /tmp/migs.tar.gz -C "$BASE"
 
-          # --- sanitasi DATABASE_URL (host 'db' -> 127.0.0.1 bila bukan dalam docker-net)
-          DB_URL="${DATABASE_URL}"
-          if echo "$DB_URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+          # --- deteksi network docker postgres
+          PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
+          NET=""
+          if [ -n "$PG_CONT" ]; then
+            NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')"
+          fi
+          [ -z "$NET" ] && docker network inspect crive-stack_default >/dev/null 2>&1 && NET="crive-stack_default" || true
+
+          # --- normalisasi URL
+          DB_URL="${DATABASE_URL//sslmode=require/sslmode=disable}"
+          if [ -z "$NET" ] && echo "$DB_URL" | grep -E '://[^@]*@db(:|/)' >/dev/null; then
             DB_URL="$(echo "$DB_URL" | sed 's/@db/@127.0.0.1/')"
           fi
 
-          # --- fungsi apply + logging
+          run_psql() {
+            local file="$1"
+            if [ -n "$NET" ]; then
+              docker run --rm --network "$NET" \
+                -e PSQLRC=/dev/null \
+                -v "$BASE":/work \
+                postgres:alpine sh -lc "psql \"$DB_URL\" -v ON_ERROR_STOP=1 -f \"/work/${file#$BASE/}\""
+            else
+              psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$file"
+            fi
+          }
+
           apply_file() {
             local f="$1"
             local start end dur status=success
             start=$(date +%s%3N)
-            if psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
+            if run_psql "$f"; then :; else status=failure; fi
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
               "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
             [ "$status" = success ]
           }
 
-          # --- eksekusi berurutan (utamakan sql/up/*.sql)
           if [ -d "$BASE/sql/up" ] && ls "$BASE/sql/up/"*.sql >/dev/null 2>&1; then
             for f in $(ls -1 "$BASE/sql/up/"*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
           elif [ -f "$BASE/sql/up.sql" ]; then
@@ -266,8 +281,7 @@ jobs:
           REMOTE
 
       - name: Fetch observability log (STG)
-        env:
-          OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl
+        env: { OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl }
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
 
       - name: Upload observability artifact (STG)
@@ -408,16 +422,11 @@ jobs:
           OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl
         run: |
           set -euo pipefail
-          # ambil & bersihkan DB URL dari env (hapus quotes & sslmode=require)
-          RAW_DB='${{ env.DATABASE_URL }}'
-          RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
+          RAW_DB='${{ env.DATABASE_URL }}'; RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
           DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
           DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
-
-          # kirim paket
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
 
-          # remote exec
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='$DB_URL_ESC' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
 
@@ -425,17 +434,35 @@ jobs:
           rm -rf "$BASE" && mkdir -p "$BASE"
           tar -xzf /tmp/migs.tar.gz -C "$BASE"
 
-          # host 'db' -> 127.0.0.1 jika perlu
-          DB_URL="${DATABASE_URL}"
-          if echo "$DB_URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+          PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
+          NET=""
+          if [ -n "$PG_CONT" ]; then
+            NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')"
+          fi
+          [ -z "$NET" ] && docker network inspect crive-stack_default >/dev/null 2>&1 && NET="crive-stack_default" || true
+
+          DB_URL="${DATABASE_URL//sslmode=require/sslmode=disable}"
+          if [ -z "$NET" ] && echo "$DB_URL" | grep -E '://[^@]*@db(:|/)' >/dev/null; then
             DB_URL="$(echo "$DB_URL" | sed 's/@db/@127.0.0.1/')"
           fi
+
+          run_psql() {
+            local file="$1"
+            if [ -n "$NET" ]; then
+              docker run --rm --network "$NET" \
+                -e PSQLRC=/dev/null \
+                -v "$BASE":/work \
+                postgres:alpine sh -lc "psql \"$DB_URL\" -v ON_ERROR_STOP=1 -f \"/work/${file#$BASE/}\""
+            else
+              psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$file"
+            fi
+          }
 
           apply_file() {
             local f="$1"
             local start end dur status=success
             start=$(date +%s%3N)
-            if psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
+            if run_psql "$f"; then :; else status=failure; fi
             end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
               "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
@@ -454,8 +481,7 @@ jobs:
           REMOTE
 
       - name: Fetch observability log (STG/PRD)
-        env:
-          OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl
+        env: { OBS_LOG: migration-${{ github.run_id }}-${{ github.job }}.jsonl }
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
 
       - name: Upload observability artifact
