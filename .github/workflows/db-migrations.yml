@@ -2,10 +2,10 @@ name: DB Migrations
 
 on:
   pull_request:
-    paths: [ "db/**", "scripts/db/**" ]
+    paths: ["db/**", "sql/**", "scripts/db/**", ".github/workflows/db-migrations.yml"]
   push:
-    branches: [ "main" ]
-    paths: [ "db/**", "scripts/db/**" ]
+    branches: ["main"]
+    paths: ["db/**", "sql/**", "scripts/db/**"]
   workflow_dispatch:
     inputs:
       target:
@@ -28,9 +28,8 @@ permissions:
   contents: read
 
 jobs:
-  # ---- 1) Gate CI pada PR: status + plan + lint statis ----
   lint-plan:
-    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_lint == 'true')
+    if: github.event_name == 'pull_request' || github.event.inputs.run_lint == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,23 +38,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: 'pnpm' }
       - run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Status (optional)
-        run: |
-          if [ -f db/migrate.mjs ]; then
-            node db/migrate.mjs --status
-          else
-            echo "skip: db/migrate.mjs tidak ada (OK)"
-          fi
-
-      - name: Lint plan (optional)
-        run: |
-          if [ -f db/migrate.mjs ]; then
-            node db/migrate.mjs --plan
-          else
-            echo "skip: db/migrate.mjs tidak ada (OK)"
-          fi
-
+      - name: Status
+        run: node db/migrate.mjs --status
+      - name: Lint plan
+        run: node db/migrate.mjs --plan
       - name: Lint migration files (naming, @down, no DROP)
         run: |
           node -e "const fs=require('fs');const p='db/migrations';
@@ -68,14 +54,28 @@ jobs:
             if(/\bDROP\s+(TABLE|COLUMN)\b/i.test(t) && !t.includes('/*allow-drop*/')) bad.push('DROP found (no allow): '+f);
           }
           if(bad.length){console.error(bad.join('\n'));process.exit(1);} "
+      - name: Dry-run (plan only)
+        run: |
+          node -e "
+          const fs=require('fs');
+          const p='db/migrations';
+          if(!fs.existsSync(p)){ console.log('Migrasi terdeteksi: 0'); process.exit(0); }
+          const files=fs.readdirSync(p).filter(f=>f.endsWith('.sql')).sort();
+          console.log('Migrasi terdeteksi:', files.length);
+          files.forEach(f=>console.log('-', f));
+          "
+      - name: Summarize (lint)
+        if: always()
+        run: |
+          echo '### Lint summary' >> $GITHUB_STEP_SUMMARY
+          echo '- Status & Plan OK' >> $GITHUB_STEP_SUMMARY
 
-  # ---- 2) Compat Matrix: Postgres 15 & 16 saat PR ----
   compat-matrix:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     strategy:
-      matrix: { pg: ['15','16'] }
-
+      fail-fast: false
+      matrix: { pg: ['15','16','17'] }
     services:
       postgres:
         image: postgres:${{ matrix.pg }}
@@ -87,10 +87,8 @@ jobs:
         options: >-
           --health-cmd="pg_isready -U postgres"
           --health-interval=10s --health-timeout=5s --health-retries=20
-
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crive
-
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v3
@@ -98,12 +96,24 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: 'pnpm' }
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Apply migrations on ephemeral DB
-        run: node db/migrate.mjs --apply --no-advisory-lock || true
+      - name: Apply baseline (sql/up/**)
+        run: |
+          if ls sql/up/*.sql >/dev/null 2>&1; then
+            for f in $(ls -1 sql/up/*.sql | sort); do
+              echo "[baseline] $f"
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+            done
+          fi
+      - name: Apply migrations (ephemeral)
+        run: node db/migrate.mjs --apply --no-advisory-lock
+      - name: FK index lint
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/db/check_fk_indexes.sql
+      - name: Summarize (matrix)
+        run: |
+          echo "### Compat Matrix PG ${{ matrix.pg }} ✅" >> $GITHUB_STEP_SUMMARY
 
-  # ---- 3) Apply STG manual + Observability artifact ----
   apply-stg:
-    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event.inputs.target == 'stg' || github.event.inputs.run_stg == 'true')
+    if: github.ref == 'refs/heads/main' || github.event.inputs.target == 'stg' || github.event.inputs.run_stg == 'true'
     runs-on: ubuntu-latest
     environment: stg
     env:
@@ -114,23 +124,19 @@ jobs:
       DOPPLER_CONFIG: stg
     steps:
       - uses: actions/checkout@v4
-
       - name: Install psql
         run: sudo apt-get update -y && sudo apt-get install -y postgresql-client
-
       - name: Install Doppler CLI
         run: curl -sLf https://cli.doppler.com/install.sh | sudo sh
-
       - name: Install Doppler CLI action
         uses: dopplerhq/cli-action@v3
-
       - name: Load env from Doppler -> $GITHUB_ENV
         run: |
           set -euo pipefail
           doppler secrets download --no-file --format env \
             --project crive --config "${DOPPLER_CONFIG}" \
-            | sed -E 's/^export[[:space:]]+//; s/^;*(.*)$/\1/' >> "$GITHUB_ENV"
-
+            | sed -E 's/^export[[:space:]]+//; s/^;*(.*)$/\1/' \
+            >> "$GITHUB_ENV"
       - name: Prepare SSH
         run: |
           set -euo pipefail
@@ -138,94 +144,58 @@ jobs:
           echo "$SSH_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
-
       - name: Package SQL
         run: tar -czf migs.tar.gz sql || true
-
       - name: Upload package
         run: |
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
-
       - name: Apply SQL (via docker network) — STG + observability
-        env:
-          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
+        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
         run: |
           set -euo pipefail
-          RAW_DB="${DATABASE_URL}"; RAW_DB="${RAW_DB%\"}"; RAW_DB="${RAW_DB#\"}"
-          DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
-          DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='$DB_URL_ESC' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "DATABASE_URL='${DATABASE_URL//sslmode=require/sslmode=disable}' OBS_LOG='$OBS_LOG' bash -se" <<'REMOTE'
           set -euo pipefail
           rm -rf /deploy/migs/work || true
           mkdir -p /deploy/migs/work
           tar -xzf /tmp/migs.tar.gz -C /deploy/migs/work
           cd /deploy/migs/work
-          LOG="/deploy/migs/$OBS_LOG"; : > "$LOG"
-
-          PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
-          NET=""
-          if [ -n "$PG_CONT" ]; then
-            NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')"
-          fi
-
-          run_sql() {
-            local f="$1"; local rel="${f#$(pwd)/}" ; local s=success; local t0 t1 d
-            t0=$(date +%s%3N)
-            if [ -n "$NET" ] && docker network inspect "$NET" >/dev/null 2>&1; then
-              docker run --rm --network "$NET" -e DATABASE_URL="$DATABASE_URL" -e FPATH="$rel" \
-                -v /deploy/migs/work:/work:ro postgres:16-alpine \
-                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
-            elif docker network inspect crive-stack_default >/dev/null 2>&1; then
-              docker run --rm --network crive-stack_default -e DATABASE_URL="$DATABASE_URL" -e FPATH="$rel" \
-                -v /deploy/migs/work:/work:ro postgres:16-alpine \
-                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
-            else
-              URL="$DATABASE_URL"
-              if echo "$URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
-                URL="$(echo "$URL" | sed 's/@db/@127.0.0.1/')"
-              fi
-              docker run --rm --network host -e DATABASE_URL="$URL" -e FPATH="$rel" \
-                -v /deploy/migs/work:/work:ro postgres:16-alpine \
-                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
-            fi || s=failure
-            t1=$(date +%s%3N); d=$((t1-t0))
+          apply_file() {
+            local f="$1"; local start end dur status=success
+            start=$(date +%s%3N)
+            if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
+            end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
-              "$(date -u +%FT%TZ)" "$rel" "$d" "$s" >> "$LOG"
-            [ "$s" = success ]
+              "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
+            [ "$status" = success ]
           }
-
           if [ -d sql/up ]; then
-            for f in $(ls -1 sql/up/*.sql 2>/dev/null | sort); do echo "[apply] $f"; run_sql "$f"; done
+            for f in $(ls -1 sql/up/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
           elif [ -f sql/up.sql ]; then
-            echo "[apply] sql/up.sql"; run_sql "sql/up.sql"
+            echo "[apply] sql/up.sql"; apply_file "sql/up.sql"
           elif ls sql/*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 sql/*.sql | sort); do echo "[apply] $f"; run_sql "$f"; done
+            for f in $(ls -1 sql/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
           else
-            printf '{"ts":"%s","info":"no_sql_found","status":"noop"}\n' "$(date -u +%FT%TZ)" >> "$LOG"
+            echo "No SQL found under sql/"; exit 0
           fi
           REMOTE
-
       - name: Fetch observability log (STG)
-        env:
-          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
+        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
-
       - name: Upload observability artifact (STG)
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          # ← unik per job & attempt
-          name: migration-observability-stg-${{ github.job }}-${{ github.run_attempt }}
-          path: "migration-${{ github.run_id }}.jsonl"
+          name: migration-observability-stg-apply-stg-${{ github.run_attempt }}
+          path: migration-${{ github.run_id }}.jsonl
           if-no-files-found: ignore
 
-
-  # ---- 4) Apply STG/PRD manual (tidak jalan di PR) + Snapshot PRD + Observability ----
   migrate:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.run_stg != 'true')
+        || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target || 'prd' }}
     env:
       TARGET: ${{ github.event.inputs.target }}
       HOST: ${{ github.event.inputs.target == 'stg' && secrets.STG_HOST || secrets.PRD_HOST }}
@@ -246,7 +216,8 @@ jobs:
           set -euo pipefail
           doppler secrets download --no-file --format env \
             --project crive --config "${DOPPLER_CONFIG}" \
-          | sed -E 's/^export[[:space:]]+//; s/="(.*)"$/=\1/' >> "$GITHUB_ENV"
+          | sed -E 's/^export[[:space:]]+//; s/="(.*)"$/=\1/' \
+          >> "$GITHUB_ENV"
       - name: Prepare SSH
         run: |
           set -euo pipefail
@@ -260,33 +231,58 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
-
       - name: Snapshot before migrate (PRD only)
         if: env.TARGET == 'prd'
-        env:
-          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        env: { BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }} }
         run: |
           set -eo pipefail
           BP="${BACKUP_PASSPHRASE-}"
-          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "env DATABASE_URL='${DATABASE_URL}' BACKUP_PASSPHRASE='$BP' bash -se" <<'REMOTE'
+          ssh -o StrictHostKeyChecking=yes deploy@"$HOST" "env DATABASE_URL=\"$DATABASE_URL\" BACKUP_PASSPHRASE=\"$BP\" bash -se" <<'REMOTE'
           set -euo pipefail
           : "${DATABASE_URL:?missing}"
-          [ -z "${BACKUP_PASSPHRASE:-}" ] && BACKUP_PASSPHRASE="$(openssl rand -hex 16)"
+          if [ -z "${BACKUP_PASSPHRASE:-}" ]; then
+            echo "::warning title=BACKUP_PASSPHRASE missing::Using ephemeral passphrase for snapshot"
+            BACKUP_PASSPHRASE="$(openssl rand -hex 16)"
+          fi
           mkdir -p /deploy/backups
-          OUT="/deploy/backups/crive-$(date +%Y%m%d-%H%M).dump"
-          pg_dump --no-owner --format=custom "$DATABASE_URL" -f "$OUT"
+          STAMP="$(date +'%Y%m%d-%H%M')"
+          OUT="/deploy/backups/crive-${STAMP}.dump"
+          PG_CONT="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk '/5432/{print $1; exit}' || true)"
+          NET=""
+          if [ -n "$PG_CONT" ]; then
+            NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{printf "%s " $k}}{{end}}' "$PG_CONT" | awk '{print $1}')"
+          fi
+          SNAP_OK=0
+          if [ -n "$NET" ] && docker network inspect "$NET" >/dev/null 2>&1; then
+            docker run --rm --network "$NET" -e DATABASE_URL="$DATABASE_URL" -v /deploy/backups:/backup \
+              postgres:alpine sh -lc 'pg_dump --no-owner --format=custom "$DATABASE_URL" -f /backup/out.dump'
+            mv "/deploy/backups/out.dump" "$OUT"
+            SNAP_OK=1
+          elif docker network inspect crive-stack_default >/dev/null 2>&1; then
+            docker run --rm --network crive-stack_default -e DATABASE_URL="$DATABASE_URL" -v /deploy/backups:/backup \
+              postgres:alpine sh -lc 'pg_dump --no-owner --format=custom "$DATABASE_URL" -f /backup/out.dump'
+            mv "/deploy/backups/out.dump" "$OUT"
+            SNAP_OK=1
+          else
+            URL="$DATABASE_URL"
+            if echo "$URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
+              URL="$(echo "$URL" | sed 's/@db/@127.0.0.1/')"
+            fi
+            if pg_dump --no-owner --format=custom "$URL" -f "$OUT"; then SNAP_OK=1; fi
+          fi
+          if [ "$SNAP_OK" -ne 1 ]; then
+            echo "::error title=Snapshot failed::Unable to dump database on any network mode"; exit 1
+          fi
           gpg --batch --yes --passphrase "$BACKUP_PASSPHRASE" -c "$OUT"
-          shasum -a 256 "$OUT.gpg" > "$OUT.gpg.sha256"
+          sha256sum "$OUT.gpg" > "$OUT.gpg.sha256" || shasum -a256 "$OUT.gpg" > "$OUT.gpg.sha256"
           rm -f "$OUT"
           echo "Snapshot OK: $OUT.gpg"
           REMOTE
-
       - name: Apply SQL (via docker network) + observability
-        env:
-          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
+        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
         run: |
           set -euo pipefail
-          RAW_DB="${DATABASE_URL}"; RAW_DB="${RAW_DB%\"}"; RAW_DB="${RAW_DB#\"}"
+          RAW_DB='${{ env.DATABASE_URL }}'; RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
           DB_URL="${RAW_DB//sslmode=require/sslmode=disable}"
           DB_URL_ESC=$(printf "%s" "$DB_URL" | sed "s/'/'\"'\"'/g")
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
@@ -295,51 +291,32 @@ jobs:
           mkdir -p /deploy/migs && rm -rf /deploy/migs/work || true
           cd /deploy/migs
           tar -xzf /tmp/migs.tar.gz
-          LOG="/deploy/migs/$OBS_LOG"; : > "$LOG"
-
-          run_sql() {
-            local f="$1"; local rel="${f#$(pwd)/}" ; local s=success; local t0 t1 d
-            t0=$(date +%s%3N)
-            if docker network inspect crive-stack_default >/dev/null 2>&1; then
-              docker run --rm --network crive-stack_default -e DATABASE_URL="$DATABASE_URL" -e FPATH="$rel" \
-                -v "$PWD":/work:ro postgres:16-alpine \
-                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
-            else
-              URL="$DATABASE_URL"
-              if echo "$URL" | grep -E '://[^@]*@db(:|/)' >/dev/null 2>&1; then
-                URL="$(echo "$URL" | sed 's/@db/@127.0.0.1/')"
-              fi
-              docker run --rm --network host -e DATABASE_URL="$URL" -e FPATH="$rel" \
-                -v "$PWD":/work:ro postgres:16-alpine \
-                sh -lc 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "/work/$FPATH"'
-            fi || s=failure
-            t1=$(date +%s%3N); d=$((t1-t0))
+          apply_file() {
+            local f="$1"; local start end dur status=success
+            start=$(date +%s%3N)
+            if psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; then :; else status=failure; fi
+            end=$(date +%s%3N); dur=$((end-start))
             printf '{"ts":"%s","file":"%s","duration_ms":%s,"status":"%s"}\n' \
-              "$(date -u +%FT%TZ)" "$rel" "$d" "$s" >> "$LOG"
-            [ "$s" = success ]
+              "$(date -u +%FT%TZ)" "$f" "$dur" "$status" >> "/deploy/migs/$OBS_LOG"
+            [ "$status" = success ]
           }
-
           if ls sql/up/*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 sql/up/*.sql | sort); do echo "[apply] $f"; run_sql "$f"; done
+            for f in $(ls -1 sql/up/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
           elif [ -f sql/up.sql ]; then
-            echo "[apply] sql/up.sql"; run_sql "sql/up.sql"
+            echo "[apply] sql/up.sql"; apply_file "sql/up.sql"
           elif ls sql/*.sql >/dev/null 2>&1; then
-            for f in $(ls -1 sql/*.sql | sort); do echo "[apply] $f"; run_sql "$f"; done
+            for f in $(ls -1 sql/*.sql | sort); do echo "[apply] $f"; apply_file "$f"; done
           else
-            printf '{"ts":"%s","info":"no_sql_found","status":"noop"}\n' "$(date -u +%FT%TZ)" >> "$LOG"
+            echo "No SQL found"; exit 0
           fi
           REMOTE
-
       - name: Fetch observability log (STG/PRD)
-        env:
-          OBS_LOG: "migration-${{ github.run_id }}.jsonl"
+        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
-
       - name: Upload observability artifact
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          # ← unik per target, job, attempt
-          name: migration-observability-${{ env.TARGET || 'auto' }}-${{ github.job }}-${{ github.run_attempt }}
-          path: "migration-${{ github.run_id }}.jsonl"
+          name: migration-observability-${{ env.TARGET || 'auto' }}-migrate-${{ github.run_attempt }}
+          path: migration-${{ github.run_id }}.jsonl
           if-no-files-found: ignore
