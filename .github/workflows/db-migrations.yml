@@ -166,10 +166,10 @@ jobs:
       - name: Upload package
         run: |
           ssh -o StrictHostKeyChecking=yes deploy@"$HOST" 'mkdir -p /deploy/migs'
-          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz
-          
+          scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/deploy/migs/migs.tar.gz        
       - name: Apply SQL (via docker network) — STG + observability
-        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
+        env: 
+          { OBS_LOG: migration-${{ github.run_id }}.jsonl }
         run: |
           set -euo pipefail
           scp -o StrictHostKeyChecking=yes migs.tar.gz deploy@"$HOST":/tmp/migs.tar.gz
@@ -199,7 +199,8 @@ jobs:
           fi
           REMOTE
       - name: Fetch observability log (STG)
-        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
+        env: 
+          { OBS_LOG: migration-${{ github.run_id }}.jsonl }
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
       - name: Upload observability artifact (STG)
         uses: actions/upload-artifact@v4
@@ -302,7 +303,8 @@ jobs:
           echo "Snapshot OK: $OUT.gpg"
           REMOTE
       - name: Apply SQL (via docker network) + observability
-        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
+        env: 
+          { OBS_LOG: migration-${{ github.run_id }}.jsonl }
         run: |
           set -euo pipefail
           RAW_DB='${{ env.DATABASE_URL }}'; RAW_DB=${RAW_DB#\"}; RAW_DB=${RAW_DB%\"}
@@ -334,7 +336,8 @@ jobs:
           fi
           REMOTE
       - name: Fetch observability log (STG/PRD)
-        env: { OBS_LOG: migration-${{ github.run_id }}.jsonl }
+        env: 
+          { OBS_LOG: migration-${{ github.run_id }}.jsonl }
         run: scp -o StrictHostKeyChecking=yes deploy@"$HOST":/deploy/migs/"$OBS_LOG" "$OBS_LOG" || true
       - name: Upload observability artifact
         uses: actions/upload-artifact@v4
